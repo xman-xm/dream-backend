@@ -51,6 +51,9 @@ export async function POST(req: Request) {
         })
 
         // Generate token for mobile clients (so they can auto-login)
+        if (!process.env.NEXTAUTH_SECRET) {
+            throw new Error("NEXTAUTH_SECRET is not defined")
+        }
         const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET)
         const token = await new SignJWT({
             userId: user.id,
