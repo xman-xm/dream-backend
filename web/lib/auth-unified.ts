@@ -1,0 +1,62 @@
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/app/api/auth/[...nextauth]/route"
+import { jwtVerify } from "jose"
+import { prisma } from "@/lib/prisma"
+
+/**
+ * Retrieves the currently authenticated user from either:
+ * 1. A NextAuth session (cookies)
+ * 2. A JWT Bearer token (API headers)
+ */
+export async function getCurrentUser(req?: Request) {
+    // 1. Try getting NextAuth session (Web)
+    const session = await getServerSession(authOptions)
+
+    if (session?.user?.email) {
+        return await prisma.user.findUnique({
+            where: { email: session.user.email },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                username: true,
+                avatarUrl: true,
+                bio: true,
+                createdAt: true,
+                // Don't return password
+            }
+        })
+    }
+
+    // 2. Try getting Bearer Token (Mobile)
+    if (req) {
+        const authHeader = req.headers.get("Authorization")
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+            const token = authHeader.split(" ")[1]
+            try {
+                const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET)
+                const { payload } = await jwtVerify(token, secret)
+
+                if (payload.userId) {
+                    return await prisma.user.findUnique({
+                        where: { id: payload.userId as string },
+                        select: {
+                            id: true,
+                            email: true,
+                            name: true,
+                            username: true,
+                            avatarUrl: true,
+                            bio: true,
+                            createdAt: true,
+                        }
+                    })
+                }
+            } catch (error) {
+                // Token invalid or expired
+                return null
+            }
+        }
+    }
+
+    return null
+}
