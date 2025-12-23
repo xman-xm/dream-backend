@@ -1,4 +1,4 @@
-# Social Media API Documentation
+ f# Social Media API Documentation
 
 This API supports both **Web** (NextAuth session-based) and **Mobile** (JWT-token based) authentication using a unified security layer.
 

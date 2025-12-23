@@ -2,9 +2,20 @@ import { validateCredentials } from '@/lib/auth'
 import { SignJWT } from 'jose'
 
 export async function POST(req: Request) {
-    try {
-        const { email, password } = await req.json()
+    let email, password;
 
+    try {
+        const body = await req.json()
+        email = body.email
+        password = body.password
+    } catch (error) {
+        return Response.json(
+            { error: 'Invalid JSON body' },
+            { status: 400 }
+        )
+    }
+
+    try {
         // Use shared validation logic
         const user = await validateCredentials(email, password)
 
