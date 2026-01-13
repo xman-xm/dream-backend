@@ -1,70 +1,50 @@
 import "../global.css";
-import { Slot } from "expo-router";
+import { Slot, useRouter, useSegments } from "expo-router";
+import { useEffect } from "react";
+import { View, ActivityIndicator } from "react-native";
+import { AuthProvider, useAuth } from "../context/AuthContext";
 
-import { Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+function RootLayoutNav() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
 
-import { Image, Link } from "@/tw";
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === "(auth)";
+
+    if (!isAuthenticated && !inAuthGroup && segments[0] !== "login" && segments[0] !== "signup") {
+      // Redirect to the login page if not authenticated
+      router.replace("/login");
+    } else if (isAuthenticated && (segments[0] === "login" || segments[0] === "signup")) {
+      // Redirect to the home page if already authenticated. 
+      // This assumes current "login" is a top-level route based on my file creation
+      router.replace("/");
+    }
+  }, [isAuthenticated, segments, isLoading]);
+
+  if (isLoading) {
+    return (
+      <View className="flex-1 justify-center items-center bg-white">
+        <ActivityIndicator size="large" color="#2563EB" />
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex flex-1 bg-white">
+      <Slot />
+    </View>
+  );
+}
 
 export default function Layout() {
   return (
-    <View className="flex flex-1 bg-white">
-      <Header />
-      <Slot />
-      <Footer />
-    </View>
+    <AuthProvider>
+      <RootLayoutNav />
+    </AuthProvider>
   );
 }
 
-function Header() {
-  const { top } = useSafeAreaInsets();
-  return (
-    <View style={{ paddingTop: top }}>
-      <View className="px-4 lg:px-6 h-14 flex items-center flex-row">
-        <Image
-          source="https://simpleicons.org/icons/expo.svg"
-          className="w-6 h-6 object-contain mr-2"
-        />
-        <Link className="font-bold flex-1 items-center justify-center" href="/">
-          ACME
-        </Link>
-        <View className="flex flex-row gap-4 sm:gap-6">
-          <Link
-            className="text-md font-medium hover:underline web:underline-offset-4"
-            href="/"
-          >
-            About
-          </Link>
-          <Link
-            className="text-md font-medium hover:underline web:underline-offset-4"
-            href="/"
-          >
-            Product
-          </Link>
-          <Link
-            className="text-md font-medium hover:underline web:underline-offset-4"
-            href="/"
-          >
-            Pricing
-          </Link>
-        </View>
-      </View>
-    </View>
-  );
-}
 
-function Footer() {
-  const { bottom } = useSafeAreaInsets();
-  return (
-    <View
-      className="flex shrink-0 bg-gray-100 native:hidden"
-      style={{ paddingBottom: bottom }}
-    >
-      <View className="py-6 flex-1 items-start px-4 md:px-6 ">
-        <Text className={"text-center text-gray-700"}>
-          © {new Date().getFullYear()} Me
-        </Text>
-      </View>
-    </View>
-  );
-}
