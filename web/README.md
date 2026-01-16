@@ -66,17 +66,14 @@ Retrieve all posts.
 - **Response**: `Array<Post>`
 
 #### **POST** `/api/(protected)/post`
-Create a new post.
+Create a new post with an image.
+- **Content-Type**: `multipart/form-data`
 - **Body**: 
-  ```json
-  {
-    "caption": "Post text",
-    "authorId": "userId",
-    "media": {
-      "url": "https://...",
-      "type": "IMAGE | VIDEO"
-    }
-  }
+  - `caption` (text): The text content of the post.
+  - `authorId` (text): The ID of the author.
+  - `image` (file): The image file to upload.
+
+> **Note**: Image URLs returned by this endpoint (e.g., `/api/storage/file.png`) are **protected**. You must provide an `Authorization: Bearer <token>` header when fetching them.
   ```
 - **Response**: `Post object`
 

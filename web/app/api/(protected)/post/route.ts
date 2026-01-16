@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth-unified"
+import { writeFile } from "fs/promises"
+import { join } from "path"
 
 export async function GET(request: Request) {
     const user = await getCurrentUser(request)
@@ -25,34 +27,45 @@ export async function POST(request: Request) {
     }
 
     try {
-        let body;
-        try {
-            body = await request.json()
-        } catch (e) {
-            return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-        }
-
-        const { caption, authorId, groupId, media } = body
+        const formData = await request.formData()
+        const caption = formData.get('caption') as string
+        const authorId = formData.get('authorId') as string
+        const groupId = formData.get('groupId') as string | null
+        const file = formData.get('image') as File | null
 
         if (!authorId) {
             return NextResponse.json({ error: 'Author ID is required' }, { status: 400 })
         }
 
-        // Handle media input which might be an array (from old test) or object
-        let mediaUrl = '';
-        let mediaType = 'IMAGE';
+        let mediaUrl = ''
+        let mediaType = 'IMAGE'
 
-        if (Array.isArray(media) && media.length > 0) {
-            mediaUrl = media[0].url;
-            mediaType = media[0].type;
-        } else if (media && typeof media === 'object') {
-            mediaUrl = media.url || '';
-            mediaType = media.type || 'IMAGE';
+        if (file) {
+            const bytes = await file.arrayBuffer()
+            const buffer = Buffer.from(bytes)
+
+            // Ensure unique filename
+            const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`
+            const filename = `${uniqueSuffix}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '')}`
+
+            // Save to secure storage (not public)
+            const uploadDir = join(process.cwd(), 'storage')
+            const filepath = join(uploadDir, filename)
+
+            await writeFile(filepath, buffer)
+
+            // Set secure API URL
+            mediaUrl = `/api/storage/${filename}`
+
+            // Simple type detection
+            if (file.type.startsWith('video/')) {
+                mediaType = 'VIDEO'
+            }
         }
 
         const post = await prisma.post.create({
             data: {
-                caption,
+                caption: caption || '',
                 authorId,
                 groupId,
                 media: mediaUrl,

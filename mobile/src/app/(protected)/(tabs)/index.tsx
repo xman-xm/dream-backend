@@ -9,9 +9,9 @@ dayjs.updateLocale('en', {
   relativeTime: {
     future: "in %s",
     past: "%s",
-    s: 'now',
-    m: "1m ago",
-    mm: "%dm ago",
+    s: ' now',
+    m: "1 min ago",
+    mm: " %d min  ago",
     h: "1h ago",
     hh: "%dh ago",
     d: "1d ago",
@@ -26,7 +26,8 @@ dayjs.updateLocale('en', {
 import React, { useEffect, useState, useCallback } from "react";
 import { View, Text, FlatList, RefreshControl } from "react-native";
 
-import { apiFetch } from "../../../lib/api";
+import { apiFetch, API_URL } from "../../../lib/api";
+import { getToken } from "../../../lib/auth-store";
 import { Image } from "expo-image";
 
 type Author = {
@@ -49,6 +50,12 @@ export default function Page() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Get token once on mount
+    getToken().then(setToken);
+  }, []);
 
   const fetchPosts = useCallback(async () => {
     try {
@@ -86,27 +93,29 @@ export default function Page() {
   const renderItem = ({ item }: { item: Post }) => (
     <View className="bg-white mb-4 py-4 shadow-sm">
       <View className="flex-row items-center px-4 mb-3">
-        <View className="bg-gray-200 w-10 h-10 rounded-full flex items-center justify-center mr-3 overflow-hidden">
+        <View className="bg-gray-200 w-10 h-10 rounded-full flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
           {item.author.avatarUrl ? (
             <Image source={{ uri: item.author.avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
           ) : (
-            <Text className="text-gray-500 font-medium">
+            <Text className="text-gray-500 font-bold text-xs">
               {(item.author.name?.[0] || item.author.username?.[0] || '?').toUpperCase()}
             </Text>
           )}
         </View>
         <View>
-          <Text className="font-semibold flex  text-gray-900">{item.author.name || item.author.username || 'Unknown User'}</Text>
-          {item.author.username && <Text className="text-gray-500 text-xs text-center items-center justify-center"> @{item.author.username}  •  <Text className="text-gray-500 text-xs font-bold">{dayjs(item.createdAt).fromNow(true)}</Text> </Text>}
-
+          <Text className="font-bold text-[14px] text-gray-900">{item.author.name || item.author.username || 'Unknown User'}</Text>
+          <Text className="text-gray-500 text-[11px]">{dayjs(item.createdAt).fromNow(true)}</Text>
         </View>
       </View>
 
       {/* Media */}
-      {item.media && (
-        <View className="w-full aspect-square bg-gray-100 mb-3">
+      {item.media && token && (
+        <View className="w-full aspect-[4/5] bg-gray-100 mb-3">
           <Image
-            source={{ uri: item.media }}
+            source={{
+              uri: item.media.startsWith('http') ? item.media : `${API_URL.replace('/api', '')}${item.media}`,
+              headers: { Authorization: `Bearer ${token}` }
+            }}
             style={{ width: '100%', height: '100%' }}
             contentFit="cover" // or contain
             transition={200}
@@ -114,13 +123,29 @@ export default function Page() {
         </View>
       )}
 
+      {/* Interaction Icons */}
+      <View className="flex-row items-center px-4 py-3">
+        <View className="flex-row items-center mr-4">
+          <Text className="text-xl">❤️</Text>
+        </View>
+        <View className="flex-row items-center mr-4">
+          <Text className="text-xl">💬</Text>
+        </View>
+        <View className="flex-row items-center">
+          <Text className="text-xl">✈️</Text>
+        </View>
+        <View className="flex-1" />
+        <View>
+          <Text className="text-xl">🔖</Text>
+        </View>
+      </View>
+
       {/* Caption */}
-      <View className="px-4">
-        <Text className="text-gray-900 leading-relaxed">
-          <Text className="font-semibold"> </Text>
+      <View className="px-4 pb-2">
+        <Text className="text-gray-900 text-[14px] leading-5">
+          <Text className="font-bold">{item.author.username || 'user'} </Text>
           {item.caption || '...'}
         </Text>
-
       </View>
     </View>
   );

@@ -1,63 +1,33 @@
-datasource db {
-  provider = "postgresql"
-}
-
 generator client {
   provider = "prisma-client-js"
   output   = "../node_modules/.prisma/client"
 }
 
-// Enums
-enum FriendshipStatus {
-  PENDING
-  ACCEPTED
+datasource db {
+  provider = "postgresql"
 }
-
-enum GroupRole {
-  ADMIN
-  MEMBER
-}
-
-enum MediaType {
-  IMAGE
-  VIDEO
-}
-
-// Models
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  username  String   @unique
-  name      String?
-  avatarUrl String?
-  bio       String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Friendships (Mutual connections logic handled via status)
-  sentFriendRequests     Friendship[] @relation("FriendshipRequester")
-  receivedFriendRequests Friendship[] @relation("FriendshipAddressee")
-
-  // Groups
-  createdGroups    Group[]       @relation("GroupCreator")
-  groupMemberships GroupMember[]
-
-  // Posts
-  posts Post[]
-
-  // Messaging
-  messagesSent  Message[]
-  conversations ConversationParticipant[]
-
-  // Interaction
-  likes    Like[]
-  comments Comment[]
-
-  // Auth
-  password String?
-  accounts Account[]
-  sessions Session[]
+  id                     String                    @id @default(cuid())
+  email                  String                    @unique
+  username               String                    @unique
+  name                   String?
+  avatarUrl              String?
+  bio                    String?
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+  password               String?
+  accounts               Account[]
+  comments               Comment[]
+  conversations          ConversationParticipant[]
+  receivedFriendRequests Friendship[]              @relation("FriendshipAddressee")
+  sentFriendRequests     Friendship[]              @relation("FriendshipRequester")
+  createdGroups          Group[]                   @relation("GroupCreator")
+  groupMemberships       GroupMember[]
+  likes                  Like[]
+  messagesSent           Message[]
+  posts                  Post[]
+  sessions               Session[]
 }
 
 model Account {
@@ -66,15 +36,14 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -98,65 +67,63 @@ model VerificationToken {
 model Friendship {
   id          String           @id @default(cuid())
   requesterId String
-  requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id])
   addresseeId String
-  addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id])
   status      FriendshipStatus @default(PENDING)
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
+  addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id])
+  requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id])
 
   @@unique([requesterId, addresseeId])
 }
 
 model Group {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   name        String
   description String?
   coverUrl    String?
   creatorId   String
-  creator     User     @relation("GroupCreator", fields: [creatorId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  members GroupMember[]
-  posts   Post[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  creator     User          @relation("GroupCreator", fields: [creatorId], references: [id])
+  members     GroupMember[]
+  posts       Post[]
 }
 
 model GroupMember {
   id       String    @id @default(cuid())
   groupId  String
-  group    Group     @relation(fields: [groupId], references: [id])
   userId   String
-  user     User      @relation(fields: [userId], references: [id])
   role     GroupRole @default(MEMBER)
   joinedAt DateTime  @default(now())
+  group    Group     @relation(fields: [groupId], references: [id])
+  user     User      @relation(fields: [userId], references: [id])
 
   @@unique([groupId, userId])
 }
 
 model Post {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   caption   String?
   authorId  String
-  author    User     @relation(fields: [authorId], references: [id])
   groupId   String?
-  group     Group?   @relation(fields: [groupId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  media    String
-  type     String
-  likes    Like[]
-  comments Comment[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  media     String
+  type      String
+  comments  Comment[]
+  likes     Like[]
+  author    User      @relation(fields: [authorId], references: [id])
+  group     Group?    @relation(fields: [groupId], references: [id])
 }
 
 model Like {
   id        String   @id @default(cuid())
   postId    String
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([postId, userId])
 }
@@ -165,20 +132,19 @@ model Comment {
   id        String   @id @default(cuid())
   content   String
   postId    String
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   authorId  String
-  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 }
 
 model Conversation {
-  id        String   @id @default(cuid())
-  isGroup   Boolean  @default(false)
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
+  id           String                    @id @default(cuid())
+  isGroup      Boolean                   @default(false)
+  name         String?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
   participants ConversationParticipant[]
   messages     Message[]
 }
@@ -186,10 +152,10 @@ model Conversation {
 model ConversationParticipant {
   id             String       @id @default(cuid())
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
   userId         String
-  user           User         @relation(fields: [userId], references: [id])
   joinedAt       DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
 
   @@unique([conversationId, userId])
 }
@@ -198,9 +164,24 @@ model Message {
   id             String       @id @default(cuid())
   content        String
   senderId       String
-  sender         User         @relation(fields: [senderId], references: [id])
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
   createdAt      DateTime     @default(now())
   readAt         DateTime?
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  sender         User         @relation(fields: [senderId], references: [id])
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+}
+
+enum GroupRole {
+  ADMIN
+  MEMBER
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
 }
