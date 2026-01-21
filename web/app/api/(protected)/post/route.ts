@@ -11,12 +11,77 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const posts = await prisma.post.findMany({
-        include: {
-            author: true
+    try {
+        // 1. Get User's Friend IDs
+        const memberships = await prisma.friendship.findMany({
+            where: {
+                status: 'ACCEPTED',
+                OR: [
+                    { requesterId: user.id },
+                    { addresseeId: user.id }
+                ]
+            },
+            select: {
+                requesterId: true,
+                addresseeId: true
+            }
+        })
+
+        const friendIds = new Set<string>()
+        memberships.forEach(f => {
+            friendIds.add(f.requesterId === user.id ? f.addresseeId : f.requesterId)
+        })
+
+        let whereCondition: any = {}
+
+        // 2. Feed Algorithm
+        if (friendIds.size > 0) {
+            // "Friends Feed": Show ONLY my friends' posts (User requested to exclude self)
+            whereCondition = {
+                authorId: {
+                    in: Array.from(friendIds)
+                }
+            }
+        } else {
+            // "Global Cold Start": User has no friends, show everything EXCEPT my own posts
+            whereCondition = {
+                authorId: {
+                    not: user.id
+                }
+            }
         }
-    })
-    return NextResponse.json(posts)
+
+        const posts = await prisma.post.findMany({
+            where: whereCondition,
+            orderBy: {
+                createdAt: 'desc'
+            },
+            include: {
+                author: true,
+                likes: {
+                    where: { userId: user.id } // optimal way to see if I liked it
+                },
+                _count: {
+                    select: {
+                        likes: true,
+                        comments: true
+                    }
+                }
+            },
+            take: 50
+        })
+
+        // Enhance post object with 'isLiked'
+        const enhancedPosts = posts.map(post => ({
+            ...post,
+            isLiked: post.likes.length > 0
+        }))
+
+        return NextResponse.json(enhancedPosts)
+    } catch (error) {
+        console.error("Feed error:", error)
+        return NextResponse.json({ error: 'Error fetching feed' }, { status: 500 })
+    }
 }
 
 export async function POST(request: Request) {

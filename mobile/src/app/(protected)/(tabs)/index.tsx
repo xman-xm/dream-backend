@@ -29,6 +29,7 @@ import { View, Text, FlatList, RefreshControl } from "react-native";
 import { apiFetch, API_URL } from "../../../lib/api";
 import { getToken } from "../../../lib/auth-store";
 import { Image } from "expo-image";
+import { FriendSuggestions } from "../../../components/FriendSuggestions";
 
 type Author = {
   id: string;
@@ -84,9 +85,13 @@ export default function Page() {
     fetchPosts();
   }, [fetchPosts]);
 
+
   const renderHeader = () => (
-    <View className="bg-white px-6 py-4 border-b border-gray-200 mb-4">
-      <Text className="text-2xl font-bold text-gray-900">Social App</Text>
+    <View>
+      <View className="bg-white px-6 py-4 border-b border-gray-200 mb-2">
+        <Text className="text-2xl font-bold text-gray-900 text-blue-600">Social App</Text>
+      </View>
+      <FriendSuggestions />
     </View>
   );
 
@@ -143,7 +148,7 @@ export default function Page() {
       {/* Caption */}
       <View className="px-4 pb-2">
         <Text className="text-gray-900 text-[14px] leading-5">
-          <Text className="font-bold">{item.author.username || 'user'} </Text>
+
           {item.caption || '...'}
         </Text>
       </View>
