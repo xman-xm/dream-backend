@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth-unified"
 import { writeFile } from "fs/promises"
 import { join } from "path"
+import { sendPushNotification } from "@/lib/notifications"
 
 export async function GET(request: Request) {
     const user = await getCurrentUser(request)
@@ -140,6 +141,48 @@ export async function POST(request: Request) {
                 author: true
             }
         })
+
+        // Notify Friends
+        const friends = await prisma.friendship.findMany({
+            where: {
+                OR: [
+                    { requesterId: user.id },
+                    { addresseeId: user.id }
+                ],
+                status: 'ACCEPTED'
+            },
+            include: {
+                requester: { select: { id: true, pushToken: true } },
+                addressee: { select: { id: true, pushToken: true } }
+            }
+        })
+
+
+        // Get current user's push token to avoid self-notifications (e.g. same device testing)
+        const currentUser = await prisma.user.findUnique({
+            where: { id: user.id },
+            select: { pushToken: true }
+        })
+
+        const tokens: string[] = []
+        friends.forEach(f => {
+            const friend = f.requesterId === user.id ? f.addressee : f.requester
+            if (friend.pushToken && friend.pushToken !== currentUser?.pushToken) {
+                tokens.push(friend.pushToken)
+            }
+        })
+
+        console.log(`[DEBUG] Found ${friends.length} friends for user ${user.id}`);
+        console.log(`[DEBUG] Sending notifications to ${tokens.length} tokens`);
+
+        if (tokens.length > 0) {
+            await sendPushNotification(
+                tokens,
+                `New Post from ${user.name || user.username}`,
+                `Check out what ${user.name || user.username} just posted!`,
+                { postId: post.id }
+            )
+        }
 
         return NextResponse.json(post)
     } catch (error) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth-unified"
+import { sendPushNotification } from "@/lib/notifications"
 
 // GET: List friends and pending requests
 export async function GET(request: Request) {
@@ -164,8 +165,26 @@ export async function PATCH(request: Request) {
 
         const updated = await prisma.friendship.update({
             where: { id: friendshipId },
-            data: { status: statusUpdate }
+            data: { status: statusUpdate },
+            include: {
+                requester: { select: { id: true, pushToken: true, name: true, username: true } }
+            }
         })
+
+        // Notify the requester about the decision
+        if (updated.requester.pushToken) {
+            const title = statusUpdate === 'ACCEPTED' ? 'Friend Request Accepted' : 'Friend Request Declined';
+            const body = statusUpdate === 'ACCEPTED'
+                ? `${user.name || user.username} accepted your friend request!`
+                : `${user.name || user.username} declined your friend request.`;
+
+            await sendPushNotification(
+                [updated.requester.pushToken],
+                title,
+                body,
+                { type: 'FRIEND_UPDATE' }
+            )
+        }
 
         return NextResponse.json(updated)
     } catch (error) {

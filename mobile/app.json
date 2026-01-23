@@ -6,11 +6,29 @@
     "web": {
       "output": "static"
     },
+    "name": "SocialApp",
+    "slug": "social-app-mobile",
+    "version": "1.0.0",
+    "ios": {
+      "bundleIdentifier": "com.socialapp.mobile",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.socialapp.mobile",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "NOTIFICATIONS"
+      ]
+    },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-notifications"
     ],
-    "name": "mobile",
-    "slug": "mobile"
+    "extra": {
+      "eas": {
+        "projectId": "8ad987d7-87f2-4f6a-be40-c7e329b35509"
+      }
+    }
   }
 }
