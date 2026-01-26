@@ -104,18 +104,19 @@ model GroupMember {
 }
 
 model Post {
-  id        String    @id @default(cuid())
-  caption   String?
-  authorId  String
-  groupId   String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  media     String
-  type      String
-  comments  Comment[]
-  likes     Like[]
-  author    User      @relation(fields: [authorId], references: [id])
-  group     Group?    @relation(fields: [groupId], references: [id])
+  id            String    @id @default(cuid())
+  caption       String?
+  authorId      String
+  groupId       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  media         String
+  type          String
+  aiDescription String?   @db.Text
+  comments      Comment[]
+  likes         Like[]
+  author        User      @relation(fields: [authorId], references: [id])
+  group         Group?    @relation(fields: [groupId], references: [id])
 }
 
 model Like {

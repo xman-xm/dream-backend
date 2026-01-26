@@ -19,7 +19,7 @@ export default function CreatePost() {
         const options: ImagePicker.ImagePickerOptions = {
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
-            aspect: [4, 5],
+            aspect: [9, 16],
             quality: 0.8,
         };
 
@@ -116,7 +116,7 @@ export default function CreatePost() {
                     <View className="mb-4 w-full items-center">
                         <Image
                             source={{ uri: image }}
-                            style={{ width: '100%', aspectRatio: 4 / 5, borderRadius: 12, backgroundColor: '#f3f4f6' }}
+                            style={{ width: '100%', aspectRatio: 9 / 16, borderRadius: 12, backgroundColor: '#f3f4f6' }}
                             contentFit="cover"
                         />
                         <View className="flex-row mt-4 space-x-4">
@@ -128,7 +128,7 @@ export default function CreatePost() {
                 ) : (
                     <TouchableOpacity
                         onPress={() => pickImage(true)}
-                        className="w-full aspect-[4/5] bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 items-center justify-center mb-6"
+                        className="w-full aspect-[9/16] bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 items-center justify-center mb-6"
                     >
                         <View className="items-center">
                             <Text className="text-4xl mb-2">📸</Text>

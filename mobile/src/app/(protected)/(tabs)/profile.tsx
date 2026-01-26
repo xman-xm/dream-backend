@@ -1,32 +1,219 @@
-import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import updateLocale from "dayjs/plugin/updateLocale";
+
+dayjs.extend(relativeTime);
+dayjs.extend(updateLocale);
+
+dayjs.updateLocale('en', {
+    relativeTime: {
+        future: "in %s",
+        past: "%s",
+        s: ' now',
+        m: "1 min ago",
+        mm: " %d min  ago",
+        h: "1h ago",
+        hh: "%dh ago",
+        d: "1d ago",
+        dd: "%dd ago",
+        M: "1mo ago",
+        MM: "%dmo ago",
+        y: "1y ago",
+        yy: "%dy ago"
+    }
+});
+
+import React, { useEffect, useState, useCallback } from "react";
+import { View, Text, TouchableOpacity, FlatList, RefreshControl } from "react-native";
 import { useAuth } from "../../../context/AuthContext";
+import { apiFetch, API_URL } from "../../../lib/api";
+import { getToken } from "../../../lib/auth-store";
+import { Image } from "expo-image";
+import { CommentsModal } from "../../../components/CommentsModal";
+
+type Author = {
+    id: string;
+    name?: string;
+    username?: string;
+    avatarUrl?: string;
+};
+
+type Post = {
+    id: string;
+    caption: string;
+    media?: string;
+    type?: 'IMAGE' | 'VIDEO';
+    createdAt: string;
+    author: Author;
+};
 
 export default function Profile() {
     const { user, signOut } = useAuth();
+    const [posts, setPosts] = useState<Post[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [token, setToken] = useState<string | null>(null);
+    const [commentModalVisible, setCommentModalVisible] = useState(false);
+    const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
-    return (
-        <View className="flex-1 bg-white p-6">
-            <Text className="text-2xl font-bold text-gray-900 mb-6">Profile</Text>
+    useEffect(() => {
+        // Get token once on mount
+        getToken().then(setToken);
+    }, []);
 
-            {user && (
-                <View className="items-center mb-8">
-                    <View className="bg-blue-100 rounded-full w-24 h-24 items-center justify-center mb-4">
-                        <Text className="text-blue-600 font-bold text-3xl">
-                            {(user.name?.[0] || user.email[0]).toUpperCase()}
-                        </Text>
+    const fetchPosts = useCallback(async () => {
+        if (!user) return;
+
+        try {
+            // Fetch posts for the current user only
+            const response = await apiFetch(`/post?userId=${user.id}`);
+            if (response.ok) {
+                const data = await response.json();
+                setPosts(data);
+            } else {
+                console.error('Failed to fetch user posts');
+            }
+        } catch (error) {
+            console.error('Error fetching user posts:', error);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    }, [user]);
+
+    useEffect(() => {
+        fetchPosts();
+    }, [fetchPosts]);
+
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        fetchPosts();
+    }, [fetchPosts]);
+
+    const renderHeader = () => (
+        <View>
+            {/* Profile Info Section */}
+            <View className="bg-white px-6 py-6 border-b border-gray-200">
+                {user && (
+                    <View className="items-center mb-4">
+                        <View className="bg-blue-100 rounded-full w-24 h-24 items-center justify-center mb-4">
+                            <Text className="text-blue-600 font-bold text-3xl">
+                                {(user.name?.[0] || user.email[0]).toUpperCase()}
+                            </Text>
+                        </View>
+                        <Text className="text-xl font-bold text-gray-900">{user.name || user.email.split('@')[0]}</Text>
+                        <Text className="text-gray-500 mb-4">{user.email}</Text>
+
+                        <TouchableOpacity
+                            onPress={signOut}
+                            className="bg-red-50 py-3 px-6 rounded-xl border border-red-100 mt-2"
+                        >
+                            <Text className="text-red-600 font-medium">Sign Out</Text>
+                        </TouchableOpacity>
                     </View>
-                    <Text className="text-xl font-bold text-gray-900">{user.name || user.email.split('@')[0]}</Text>
-                    <Text className="text-gray-500">{user.email}</Text>
+                )}
+            </View>
+
+            {/* Posts Header */}
+            <View className="bg-white px-6 py-3 border-b border-gray-200">
+                <Text className="text-lg font-bold text-gray-900">My Posts</Text>
+                <Text className="text-gray-500 text-sm">{posts.length} {posts.length === 1 ? 'post' : 'posts'}</Text>
+            </View>
+        </View>
+    );
+
+    const renderItem = ({ item }: { item: Post }) => (
+        <View className="bg-white mb-4 py-4 shadow-sm">
+            <View className="flex-row items-center px-4 mb-3">
+                <View className="bg-gray-200 w-10 h-10 rounded-full flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
+                    {item.author.avatarUrl ? (
+                        <Image source={{ uri: item.author.avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
+                    ) : (
+                        <Text className="text-gray-500 font-bold text-xs">
+                            {(item.author.name?.[0] || item.author.username?.[0] || '?').toUpperCase()}
+                        </Text>
+                    )}
+                </View>
+                <View>
+                    <Text className="font-bold text-[14px] text-gray-900">{item.author.name || item.author.username || 'Unknown User'}</Text>
+                    <Text className="text-gray-500 text-[11px]">{dayjs(item.createdAt).fromNow(true)}</Text>
+                </View>
+            </View>
+
+            {/* Media */}
+            {item.media && token && (
+                <View className="w-full aspect-[9/16] bg-gray-100 mb-3">
+                    <Image
+                        source={{
+                            uri: item.media.startsWith('http') ? item.media : `${API_URL.replace('/api', '')}${item.media}`,
+                            headers: { Authorization: `Bearer ${token}` }
+                        }}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="cover"
+                        transition={200}
+                    />
                 </View>
             )}
 
-            <TouchableOpacity
-                onPress={signOut}
-                className="bg-red-50 py-4 rounded-xl items-center border border-red-100"
-            >
-                <Text className="text-red-600 font-medium text-lg">Sign Out</Text>
-            </TouchableOpacity>
+            {/* Interaction Icons */}
+            <View className="flex-row items-center px-4 py-3">
+                <View className="flex-row items-center mr-4">
+                    <Text className="text-xl">❤️</Text>
+                </View>
+                <TouchableOpacity
+                    className="flex-row items-center mr-4"
+                    onPress={() => {
+                        setSelectedPostId(item.id);
+                        setCommentModalVisible(true);
+                    }}
+                >
+                    <Text className="text-xl">💬</Text>
+                </TouchableOpacity>
+                <View className="flex-row items-center">
+                    <Text className="text-xl">✈️</Text>
+                </View>
+                <View className="flex-1" />
+                <View>
+                    <Text className="text-xl">🔖</Text>
+                </View>
+            </View>
+
+            {/* Caption */}
+            <View className="px-4 pb-2">
+                <Text className="text-gray-900 text-[14px] leading-5">
+                    {item.caption || '...'}
+                </Text>
+            </View>
+        </View>
+    );
+
+    return (
+        <View className="flex-1 bg-gray-50">
+            <FlatList
+                data={posts}
+                renderItem={renderItem}
+                keyExtractor={(item) => item.id}
+                ListHeaderComponent={renderHeader}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                }
+                contentContainerStyle={{ paddingBottom: 20 }}
+                ListEmptyComponent={
+                    !loading ? (
+                        <View className="p-8 items-center bg-white">
+                            <Text className="text-gray-500 text-center">No posts yet.</Text>
+                            <Text className="text-gray-400 text-center text-sm mt-2">Create your first post!</Text>
+                        </View>
+                    ) : null
+                }
+            />
+
+            <CommentsModal
+                visible={commentModalVisible}
+                onClose={() => setCommentModalVisible(false)}
+                postId={selectedPostId || ''}
+                onCommentAdded={fetchPosts}
+            />
         </View>
     );
 }

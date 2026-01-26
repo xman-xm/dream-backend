@@ -24,12 +24,14 @@ dayjs.updateLocale('en', {
 });
 
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, FlatList, RefreshControl } from "react-native";
+import { View, Text, FlatList, RefreshControl, TouchableOpacity } from "react-native";
 
 import { apiFetch, API_URL } from "../../../lib/api";
 import { getToken } from "../../../lib/auth-store";
 import { Image } from "expo-image";
 import { FriendSuggestions } from "../../../components/FriendSuggestions";
+import { CommentsModal } from "../../../components/CommentsModal";
+
 
 type Author = {
   id: string;
@@ -52,6 +54,8 @@ export default function Page() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+  const [commentModalVisible, setCommentModalVisible] = useState(false);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
   useEffect(() => {
     // Get token once on mount
@@ -115,7 +119,7 @@ export default function Page() {
 
       {/* Media */}
       {item.media && token && (
-        <View className="w-full aspect-[4/5] bg-gray-100 mb-3">
+        <View className="w-full aspect-[9/16] bg-gray-100 mb-3">
           <Image
             source={{
               uri: item.media.startsWith('http') ? item.media : `${API_URL.replace('/api', '')}${item.media}`,
@@ -133,9 +137,15 @@ export default function Page() {
         <View className="flex-row items-center mr-4">
           <Text className="text-xl">❤️</Text>
         </View>
-        <View className="flex-row items-center mr-4">
+        <TouchableOpacity
+          className="flex-row items-center mr-4"
+          onPress={() => {
+            setSelectedPostId(item.id);
+            setCommentModalVisible(true);
+          }}
+        >
           <Text className="text-xl">💬</Text>
-        </View>
+        </TouchableOpacity>
         <View className="flex-row items-center">
           <Text className="text-xl">✈️</Text>
         </View>
@@ -174,6 +184,13 @@ export default function Page() {
             </View>
           ) : null
         }
+      />
+
+      <CommentsModal
+        visible={commentModalVisible}
+        onClose={() => setCommentModalVisible(false)}
+        postId={selectedPostId || ''}
+        onCommentAdded={fetchPosts}
       />
     </View>
   );

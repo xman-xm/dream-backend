@@ -13,41 +13,53 @@ export async function GET(request: Request) {
     }
 
     try {
-        // 1. Get User's Friend IDs
-        const memberships = await prisma.friendship.findMany({
-            where: {
-                status: 'ACCEPTED',
-                OR: [
-                    { requesterId: user.id },
-                    { addresseeId: user.id }
-                ]
-            },
-            select: {
-                requesterId: true,
-                addresseeId: true
-            }
-        })
-
-        const friendIds = new Set<string>()
-        memberships.forEach(f => {
-            friendIds.add(f.requesterId === user.id ? f.addresseeId : f.requesterId)
-        })
+        // Check if userId query parameter is provided
+        const { searchParams } = new URL(request.url)
+        const userIdFilter = searchParams.get('userId')
 
         let whereCondition: any = {}
 
-        // 2. Feed Algorithm
-        if (friendIds.size > 0) {
-            // "Friends Feed": Show ONLY my friends' posts (User requested to exclude self)
+        // If userId is provided, fetch posts for that specific user
+        if (userIdFilter) {
             whereCondition = {
-                authorId: {
-                    in: Array.from(friendIds)
-                }
+                authorId: userIdFilter
             }
         } else {
-            // "Global Cold Start": User has no friends, show everything EXCEPT my own posts
-            whereCondition = {
-                authorId: {
-                    not: user.id
+            // Otherwise, use the friends feed algorithm
+            // 1. Get User's Friend IDs
+            const memberships = await prisma.friendship.findMany({
+                where: {
+                    status: 'ACCEPTED',
+                    OR: [
+                        { requesterId: user.id },
+                        { addresseeId: user.id }
+                    ]
+                },
+                select: {
+                    requesterId: true,
+                    addresseeId: true
+                }
+            })
+
+            const friendIds = new Set<string>()
+            memberships.forEach(f => {
+                friendIds.add(f.requesterId === user.id ? f.addresseeId : f.requesterId)
+            })
+
+            // 2. Feed Algorithm
+            if (friendIds.size > 0) {
+                // "Friends Feed": Show ONLY my friends' posts (User requested to exclude self)
+                whereCondition = {
+                    authorId: {
+                        in: Array.from(friendIds)
+                    }
+                }
+            } else {
+                // "Global Cold Start": User has no friends, show everything EXCEPT my own posts
+                whereCondition = {
+                    authorId: {
+                        not: user.id
+                    }
                 }
             }
         }
@@ -129,13 +141,22 @@ export async function POST(request: Request) {
             }
         }
 
+        if (file) {
+            console.log(`[DEBUG] Uploaded file: name=${file.name}, type=${file.type}, size=${file.size}`);
+        }
+
+        // REMOVED synchronous AI generation to improve performance
+        // let aiDescription = null
+        // ... (moved to background)
+
         const post = await prisma.post.create({
             data: {
                 caption: caption || '',
                 authorId,
                 groupId,
                 media: mediaUrl,
-                type: mediaType
+                type: mediaType,
+                aiDescription: null, // Will be updated asynchronously
             },
             include: {
                 author: true
@@ -183,6 +204,40 @@ export async function POST(request: Request) {
                 { postId: post.id }
             )
         }
+
+        // --- Background AI Task ---
+        if (file && mediaType === 'IMAGE') {
+            (async () => {
+                try {
+                    console.log(`[Background] Starting AI description for Post ${post.id}...`);
+                    const { generateImageDescription } = await import("@/lib/gemini");
+
+                    // Re-read buffer because we need it for the AI (file stream might be consumed? 
+                    // actually we read 'bytes' earlier but scope is lost. 
+                    // Ideally we pass 'buffer' if we had it in scope.
+                    // Let's rely on re-reading if 'file' object is still valid, or duplicate buffer earlier.)
+                    // Optimization: We did `await file.arrayBuffer()` inside the IF block earlier. 
+                    // Let's move the buffer reading UP so we can pass it here. 
+
+                    // Actually, let's just re-read it safely.
+                    const bgBytes = await file.arrayBuffer();
+                    const bgBuffer = Buffer.from(bgBytes);
+
+                    const description = await generateImageDescription(bgBuffer, file.type);
+
+                    if (description) {
+                        await prisma.post.update({
+                            where: { id: post.id },
+                            data: { aiDescription: description }
+                        });
+                        console.log(`[Background] AI description updated for Post ${post.id}`);
+                    }
+                } catch (bgError) {
+                    console.error(`[Background] AI Generation Failed for Post ${post.id}:`, bgError);
+                }
+            })();
+        }
+        // --------------------------
 
         return NextResponse.json(post)
     } catch (error) {
