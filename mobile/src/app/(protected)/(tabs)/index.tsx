@@ -25,6 +25,7 @@ dayjs.updateLocale('en', {
 
 import React, { useEffect, useState, useCallback } from "react";
 import { View, Text, FlatList, RefreshControl, TouchableOpacity } from "react-native";
+import { useRouter } from "expo-router";
 
 import { apiFetch, API_URL } from "../../../lib/api";
 import { getToken } from "../../../lib/auth-store";
@@ -49,18 +50,18 @@ type Post = {
   author: Author;
 };
 
+import { useAuth } from "../../../context/AuthContext";
+
 export default function Page() {
+  const router = useRouter();
+  const { token } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
   const [commentModalVisible, setCommentModalVisible] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Get token once on mount
-    getToken().then(setToken);
-  }, []);
+  // Token is now managed by AuthContext
 
   const fetchPosts = useCallback(async () => {
     try {
@@ -102,19 +103,33 @@ export default function Page() {
   const renderItem = ({ item }: { item: Post }) => (
     <View className="bg-white mb-4 py-4 shadow-sm">
       <View className="flex-row items-center px-4 mb-3">
-        <View className="bg-gray-200 w-10 h-10 rounded-full flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
-          {item.author.avatarUrl ? (
-            <Image source={{ uri: item.author.avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
-          ) : (
-            <Text className="text-gray-500 font-bold text-xs">
-              {(item.author.name?.[0] || item.author.username?.[0] || '?').toUpperCase()}
-            </Text>
-          )}
-        </View>
-        <View>
-          <Text className="font-bold text-[14px] text-gray-900">{item.author.name || item.author.username || 'Unknown User'}</Text>
-          <Text className="text-gray-500 text-[11px]">{dayjs(item.createdAt).fromNow(true)}</Text>
-        </View>
+        <TouchableOpacity
+          className="flex-row items-center"
+          onPress={() => router.push(`/(protected)/user/${item.author.id}`)}
+        >
+          <View className="bg-gray-200 w-10 h-10 rounded-full flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
+            {item.author.avatarUrl ? (
+              <Image
+                source={{
+                  uri: item.author.avatarUrl.startsWith('http')
+                    ? item.author.avatarUrl
+                    : `${API_URL.replace('/api', '')}${item.author.avatarUrl}`,
+                  headers: { Authorization: `Bearer ${token}` }
+                }}
+                style={{ width: 40, height: 40 }}
+                contentFit="cover"
+              />
+            ) : (
+              <Text className="text-gray-500 font-bold text-xs">
+                {(item.author.name?.[0] || item.author.username?.[0] || '?').toUpperCase()}
+              </Text>
+            )}
+          </View>
+          <View>
+            <Text className="font-bold text-[14px] text-gray-900">{item.author.name || item.author.username || 'Unknown User'}</Text>
+            <Text className="text-gray-500 text-[11px]">{dayjs(item.createdAt).fromNow(true)}</Text>
+          </View>
+        </TouchableOpacity>
       </View>
 
       {/* Media */}

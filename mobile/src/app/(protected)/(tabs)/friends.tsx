@@ -1,7 +1,9 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, FlatList, TouchableOpacity, RefreshControl, Alert } from "react-native";
+import React, { useState, useEffect, useCallback } from "react";
+import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, Dimensions, Alert, RefreshControl } from "react-native";
+import { useRouter } from "expo-router";
 import { Image } from "expo-image";
-import { apiFetch } from "../../../lib/api";
+import { Ionicons } from "@expo/vector-icons";
+import { apiFetch, API_URL } from "../../../lib/api";
 
 type FriendUser = {
     id: string;
@@ -11,15 +13,28 @@ type FriendUser = {
     friendshipId: string;
 };
 
+import { useAuth } from "../../../context/AuthContext";
+
+type Group = {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+    memberCount: number;
+};
+
 export default function Friends() {
+    const router = useRouter();
+    const { token } = useAuth();
+    const [viewMode, setViewMode] = useState<'friends' | 'groups'>('friends');
     const [friends, setFriends] = useState<FriendUser[]>([]);
+    const [groups, setGroups] = useState<Group[]>([]);
     const [requests, setRequests] = useState<FriendUser[]>([]);
     const [sentRequests, setSentRequests] = useState<FriendUser[]>([]);
     const [declinedRequests, setDeclinedRequests] = useState<FriendUser[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    const fetchData = useCallback(async () => {
+    const fetchFriends = useCallback(async () => {
         try {
             const res = await apiFetch('/friends');
             if (res.ok) {
@@ -30,20 +45,36 @@ export default function Friends() {
                 setDeclinedRequests(data.declinedRequests || []);
             }
         } catch (error) {
-            console.error(error);
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
+            console.error("Error fetching friends data:", error);
         }
     }, []);
 
-    useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+    const fetchGroups = useCallback(async () => {
+        try {
+            const res = await apiFetch('/groups/member');
+            if (res.ok) {
+                const data = await res.json();
+                setGroups(data);
+            }
+        } catch (error) {
+            console.error("Error fetching groups data:", error);
+        }
+    }, []);
 
-    const onRefresh = () => {
+    const loadData = useCallback(async () => {
+        setLoading(true);
+        await Promise.all([fetchFriends(), fetchGroups()]);
+        setLoading(false);
+    }, [fetchFriends, fetchGroups]);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
+
+    const onRefresh = async () => {
         setRefreshing(true);
-        fetchData();
+        await Promise.all([fetchFriends(), fetchGroups()]);
+        setRefreshing(false);
     };
 
     const handleAccept = async (friendshipId: string) => {
@@ -54,7 +85,7 @@ export default function Friends() {
             });
             if (res.ok) {
                 Alert.alert("Connected!", "You are now friends.");
-                fetchData(); // Reload to move from requests to friends
+                fetchFriends(); // Reload to move from requests to friends
             } else {
                 Alert.alert("Error", "Could not accept request");
             }
@@ -69,7 +100,7 @@ export default function Friends() {
                 method: 'DELETE'
             });
             if (res.ok) {
-                fetchData(); // Reload to remove
+                fetchFriends(); // Reload to remove
             }
         } catch (e) {
             Alert.alert("Error", "Network error");
@@ -84,7 +115,7 @@ export default function Friends() {
             });
             if (res.ok) {
                 Alert.alert("Declined", "You have declined this request.");
-                fetchData();
+                fetchFriends();
             } else {
                 Alert.alert("Error", "Could not decline request");
             }
@@ -98,7 +129,16 @@ export default function Friends() {
             <View className="flex-row items-center flex-1">
                 <View className="w-12 h-12 rounded-full bg-gray-200 mr-3 overflow-hidden">
                     {item.avatarUrl ? (
-                        <Image source={{ uri: item.avatarUrl }} style={{ width: 48, height: 48 }} contentFit="cover" />
+                        <Image
+                            source={{
+                                uri: item.avatarUrl.startsWith('http')
+                                    ? item.avatarUrl
+                                    : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
+                                headers: { Authorization: `Bearer ${token}` }
+                            }}
+                            style={{ width: 48, height: 48 }}
+                            contentFit="cover"
+                        />
                     ) : (
                         <View className="w-full h-full items-center justify-center bg-blue-100">
                             <Text className="text-blue-500 font-bold text-lg">{(item.name?.[0] || item.username?.[0] || '?').toUpperCase()}</Text>
@@ -132,7 +172,16 @@ export default function Friends() {
             <View className="flex-row items-center flex-1">
                 <View className="w-12 h-12 rounded-full bg-gray-200 mr-3 overflow-hidden">
                     {item.avatarUrl ? (
-                        <Image source={{ uri: item.avatarUrl }} style={{ width: 48, height: 48 }} contentFit="cover" />
+                        <Image
+                            source={{
+                                uri: item.avatarUrl.startsWith('http')
+                                    ? item.avatarUrl
+                                    : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
+                                headers: { Authorization: `Bearer ${token}` }
+                            }}
+                            style={{ width: 48, height: 48 }}
+                            contentFit="cover"
+                        />
                     ) : (
                         <View className="w-full h-full items-center justify-center bg-gray-300">
                             <Text className="text-gray-500 font-bold text-lg">{(item.name?.[0] || item.username?.[0] || '?').toUpperCase()}</Text>
@@ -158,7 +207,16 @@ export default function Friends() {
             <View className="flex-row items-center flex-1">
                 <View className="w-12 h-12 rounded-full bg-gray-200 mr-3 overflow-hidden grayscale">
                     {item.avatarUrl ? (
-                        <Image source={{ uri: item.avatarUrl }} style={{ width: 48, height: 48 }} contentFit="cover" />
+                        <Image
+                            source={{
+                                uri: item.avatarUrl.startsWith('http')
+                                    ? item.avatarUrl
+                                    : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
+                                headers: { Authorization: `Bearer ${token}` }
+                            }}
+                            style={{ width: 48, height: 48 }}
+                            contentFit="cover"
+                        />
                     ) : (
                         <View className="w-full h-full items-center justify-center bg-gray-300">
                             <Text className="text-gray-500 font-bold text-lg">{(item.name?.[0] || item.username?.[0] || '?').toUpperCase()}</Text>
@@ -180,93 +238,168 @@ export default function Friends() {
     );
 
     const renderFriendItem = ({ item }: { item: FriendUser }) => (
-        <View className="flex-row items-center py-3 px-4 bg-white border-b border-gray-100">
-            <View className="w-10 h-10 rounded-full bg-gray-200 mr-3 overflow-hidden">
+        <TouchableOpacity
+            className="flex-row items-center p-4 bg-white mb-1 rounded-xl shadow-sm"
+            onPress={() => router.push(`/(protected)/user/${item.id}`)}
+        >
+            <View className="w-12 h-12 bg-gray-200 rounded-full mr-3 overflow-hidden border border-gray-100">
                 {item.avatarUrl ? (
-                    <Image source={{ uri: item.avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
+                    <Image
+                        source={{
+                            uri: item.avatarUrl.startsWith('http')
+                                ? item.avatarUrl
+                                : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
+                            headers: { Authorization: `Bearer ${token}` }
+                        }}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="cover"
+                    />
                 ) : (
                     <View className="w-full h-full items-center justify-center bg-gray-300">
                         <Text className="text-gray-600 font-bold">{(item.name?.[0] || item.username?.[0] || '?').toUpperCase()}</Text>
                     </View>
                 )}
             </View>
-            <Text className="font-semibold text-gray-900 text-base">{item.name || item.username}</Text>
-        </View>
+            <View className="flex-1">
+                <Text className="font-bold text-gray-900 text-base">{item.name || item.username}</Text>
+                <Text className="text-gray-500 text-sm">@{item.username}</Text>
+            </View>
+            <TouchableOpacity className="p-2">
+                <Ionicons name="ellipsis-horizontal" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+        </TouchableOpacity>
+    );
+
+    const renderGroupItem = ({ item }: { item: Group }) => (
+        <TouchableOpacity
+            className="flex-row items-center p-4 bg-white mb-1 rounded-xl shadow-sm"
+            onPress={() => router.push(`/(protected)/groups/${item.id}`)}
+        >
+            <View className="w-12 h-12 bg-blue-100 rounded-xl mr-3 overflow-hidden border border-blue-50 items-center justify-center">
+                {item.avatarUrl ? (
+                    <Image
+                        source={{
+                            uri: item.avatarUrl.startsWith('http')
+                                ? item.avatarUrl
+                                : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
+                            headers: { Authorization: `Bearer ${token}` }
+                        }}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="cover"
+                    />
+                ) : (
+                    <Ionicons name="people" size={24} color="#3B82F6" />
+                )}
+            </View>
+            <View className="flex-1">
+                <Text className="font-bold text-gray-900 text-base">{item.name}</Text>
+                <Text className="text-gray-500 text-sm">{item.memberCount} members</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+        </TouchableOpacity>
     );
 
     return (
-        <View className="flex-1 bg-white">
-            <View className="px-4 py-4 border-b border-gray-200">
-                <Text className="text-2xl font-bold text-gray-900">Friends</Text>
+        <View className="flex-1 bg-gray-50 pt-12 px-4">
+            <View className="flex-row items-center justify-between mb-4">
+                <Text className="text-2xl font-bold text-gray-900">Directory</Text>
+                <TouchableOpacity onPress={() => router.push('/(protected)/groups/create')}>
+                    <Ionicons name="add-circle" size={28} color="#2563EB" />
+                </TouchableOpacity>
             </View>
 
-            <FlatList
-                data={null}
-                renderItem={() => null}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-                ListHeaderComponent={
-                    <View>
-                        {/* Incoming Requests Section */}
-                        {requests.length > 0 && (
-                            <View>
-                                <Text className="px-4 py-2 font-bold text-gray-900 text-lg bg-gray-50 border-y border-gray-100">
-                                    Friend Requests <Text className="text-red-500 text-sm">{requests.length}</Text>
-                                </Text>
-                                {requests.map(req => (
-                                    <View key={req.friendshipId}>
-                                        {renderRequestItem({ item: req })}
-                                    </View>
-                                ))}
-                            </View>
-                        )}
+            {/* View Mode Toggle */}
+            <View className="flex-row bg-gray-200 p-1 rounded-xl mb-4">
+                <TouchableOpacity
+                    className={`flex-1 py-2 rounded-lg items-center ${viewMode === 'friends' ? 'bg-white shadow-sm' : ''}`}
+                    onPress={() => setViewMode('friends')}
+                >
+                    <Text className={`font-bold ${viewMode === 'friends' ? 'text-gray-900' : 'text-gray-500'}`}>Friends</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    className={`flex-1 py-2 rounded-lg items-center ${viewMode === 'groups' ? 'bg-white shadow-sm' : ''}`}
+                    onPress={() => setViewMode('groups')}
+                >
+                    <Text className={`font-bold ${viewMode === 'groups' ? 'text-gray-900' : 'text-gray-500'}`}>Groups</Text>
+                </TouchableOpacity>
+            </View>
 
-                        {/* Sent Requests Section */}
-                        {sentRequests.length > 0 && (
-                            <View>
-                                <Text className="px-4 py-2 font-bold text-gray-900 text-lg bg-gray-50 border-y border-gray-100 mt-2">
-                                    Sent Requests <Text className="text-gray-500 text-sm">{sentRequests.length}</Text>
-                                </Text>
-                                {sentRequests.map(req => (
-                                    <View key={req.friendshipId}>
-                                        {renderSentRequestItem({ item: req })}
-                                    </View>
-                                ))}
-                            </View>
-                        )}
-
-                        {/* Declined Requests Section */}
-                        {declinedRequests.length > 0 && (
-                            <View>
-                                <Text className="px-4 py-2 font-bold text-gray-900 text-lg bg-gray-50 border-y border-gray-100 mt-2">
-                                    Declined Requests <Text className="text-red-500 text-sm">{declinedRequests.length}</Text>
-                                </Text>
-                                {declinedRequests.map(req => (
-                                    <View key={req.friendshipId}>
-                                        {renderDeclinedItem({ item: req })}
-                                    </View>
-                                ))}
-                            </View>
-                        )}
-
-                        {/* Friends List Section */}
-                        <Text className="px-4 py-2 font-bold text-gray-900 text-lg bg-gray-50 border-y border-gray-100 mt-2">
-                            Your Friends ({friends.length})
-                        </Text>
-                        {friends.length === 0 ? (
-                            <View className="p-8 items-center">
-                                <Text className="text-gray-500">No friends yet.</Text>
-                                <Text className="text-gray-400 text-sm mt-1">Check the Home feed for suggestions!</Text>
-                            </View>
-                        ) : (
-                            friends.map(friend => (
-                                <View key={friend.friendshipId}>
-                                    {renderFriendItem({ item: friend })}
+            {loading ? (
+                <View className="flex-1 items-center justify-center">
+                    <ActivityIndicator size="large" color="#2563EB" />
+                </View>
+            ) : viewMode === 'groups' ? (
+                <FlatList
+                    data={groups}
+                    renderItem={renderGroupItem}
+                    keyExtractor={(item) => item.id}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                    }
+                    ListEmptyComponent={
+                        <View className="items-center justify-center py-20">
+                            <Ionicons name="people-outline" size={64} color="#D1D5DB" />
+                            <Text className="text-gray-500 mt-4 text-center">You haven't joined any groups yet.</Text>
+                            <TouchableOpacity onPress={() => router.push('/(protected)/groups/create')}>
+                                <Text className="text-blue-600 font-bold mt-2">Create a Group</Text>
+                            </TouchableOpacity>
+                        </View>
+                    }
+                />
+            ) : (
+                <FlatList
+                    data={friends}
+                    ListHeaderComponent={
+                        <>
+                            {requests.length > 0 && (
+                                <View className="mb-6">
+                                    <Text className="text-lg font-bold text-gray-900 mb-3">Friend Requests</Text>
+                                    {requests.map(item => (
+                                        <View key={item.id} className="mb-2">
+                                            {renderRequestItem({ item })}
+                                        </View>
+                                    ))}
                                 </View>
-                            ))
-                        )}
-                    </View>
-                }
-            />
+                            )}
+
+                            {sentRequests.length > 0 && (
+                                <View className="mb-6">
+                                    <Text className="text-lg font-bold text-gray-900 mb-3">Sent Requests</Text>
+                                    {sentRequests.map(item => (
+                                        <View key={item.id} className="mb-2">
+                                            {renderSentRequestItem({ item })}
+                                        </View>
+                                    ))}
+                                </View>
+                            )}
+
+                            {declinedRequests.length > 0 && (
+                                <View className="mb-6">
+                                    <Text className="text-lg font-bold text-gray-900 mb-3">Declined Requests</Text>
+                                    {declinedRequests.map(item => (
+                                        <View key={item.friendshipId}>
+                                            {renderDeclinedItem({ item })}
+                                        </View>
+                                    ))}
+                                </View>
+                            )}
+
+                            <Text className="text-lg font-bold text-gray-900 mb-3">My Friends</Text>
+                        </>
+                    }
+                    renderItem={renderFriendItem}
+                    keyExtractor={(item) => item.id}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                    }
+                    ListEmptyComponent={
+                        <View className="items-center justify-center py-20">
+                            <Ionicons name="person-add-outline" size={64} color="#D1D5DB" />
+                            <Text className="text-gray-500 mt-4">No friends yet.</Text>
+                        </View>
+                    }
+                />
+            )}
         </View>
     );
 }

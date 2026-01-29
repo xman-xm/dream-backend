@@ -32,6 +32,11 @@ export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
         }
     }
 
+    if (rest.body instanceof FormData) {
+        // @ts-ignore
+        delete defaultHeaders['Content-Type'];
+    }
+
     const config = {
         ...rest,
         headers: {
@@ -41,7 +46,10 @@ export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
     };
 
     try {
-        const response = await fetch(`${API_URL}${endpoint}`, config);
+        const fullUrl = `${API_URL}${endpoint}`;
+        console.log(`[Mobile API] Requesting: ${fullUrl}`);
+        const response = await fetch(fullUrl, config);
+        console.log(`[Mobile API] Response ${endpoint}: ${response.status}`);
         return response;
     } catch (error) {
         console.error(`API Request Error ${endpoint}:`, error);

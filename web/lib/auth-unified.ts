@@ -34,8 +34,10 @@ export async function getCurrentUser(req?: Request) {
         if (authHeader && authHeader.startsWith("Bearer ")) {
             const token = authHeader.split(" ")[1]
             try {
+                // console.log("Verifying token:", token.substring(0, 10) + "...")
                 const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET)
                 const { payload } = await jwtVerify(token, secret)
+                // console.log("Token payload:", payload)
 
                 if (payload.userId) {
                     return await prisma.user.findUnique({

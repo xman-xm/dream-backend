@@ -1,5 +1,7 @@
 import { getCurrentUser } from "@/lib/auth-unified"
 import { prisma } from "@/lib/prisma"
+import { writeFile } from "fs/promises"
+import { join } from "path"
 
 export async function PATCH(req: Request) {
     try {
@@ -9,7 +11,11 @@ export async function PATCH(req: Request) {
             return Response.json({ error: "Unauthorized" }, { status: 401 })
         }
 
-        const { name, bio, avatarUrl, username } = await req.json()
+        const formData = await req.formData()
+        const name = formData.get("name") as string | null
+        const bio = formData.get("bio") as string | null
+        const username = formData.get("username") as string | null
+        const file = formData.get("image") as File | null
 
         // Check username uniqueness if changing
         if (username && username !== user.username) {
@@ -21,13 +27,32 @@ export async function PATCH(req: Request) {
             }
         }
 
+        let avatarUrl = undefined
+        if (file) {
+            const bytes = await file.arrayBuffer()
+            const buffer = Buffer.from(bytes)
+
+            // Ensure unique filename
+            const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`
+            const filename = `${uniqueSuffix}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '')}`
+
+            // Save to secure storage
+            const uploadDir = join(process.cwd(), 'storage')
+            const filepath = join(uploadDir, filename)
+
+            await writeFile(filepath, buffer)
+
+            // Set secure API URL
+            avatarUrl = `/api/storage/${filename}`
+        }
+
         const updatedUser = await prisma.user.update({
             where: { id: user.id },
             data: {
                 name: name ?? undefined,
                 bio: bio ?? undefined,
-                avatarUrl: avatarUrl ?? undefined,
                 username: username ?? undefined,
+                avatarUrl: avatarUrl, // Will be undefined if not updated
             },
             select: {
                 id: true,
@@ -42,6 +67,7 @@ export async function PATCH(req: Request) {
         return Response.json({ user: updatedUser })
 
     } catch (error) {
+        console.error("Profile update error:", error)
         return Response.json({ error: "Failed to update profile" }, { status: 500 })
     }
 }

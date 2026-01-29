@@ -210,7 +210,7 @@ export async function POST(request: Request) {
             (async () => {
                 try {
                     console.log(`[Background] Starting AI description for Post ${post.id}...`);
-                    const { generateImageDescription } = await import("@/lib/gemini");
+                    const { generateImageDescription, getEmbedding } = await import("@/lib/gemini");
 
                     // Re-read buffer because we need it for the AI (file stream might be consumed? 
                     // actually we read 'bytes' earlier but scope is lost. 
@@ -224,6 +224,7 @@ export async function POST(request: Request) {
                     const bgBuffer = Buffer.from(bgBytes);
 
                     const description = await generateImageDescription(bgBuffer, file.type);
+                    let finalText = caption || '';
 
                     if (description) {
                         await prisma.post.update({
@@ -231,7 +232,19 @@ export async function POST(request: Request) {
                             data: { aiDescription: description }
                         });
                         console.log(`[Background] AI description updated for Post ${post.id}`);
+                        finalText += " " + description;
                     }
+
+                    // Generate Embedding (Caption + AI Description)
+                    if (finalText.trim()) {
+                        const vector = await getEmbedding(finalText.trim());
+                        if (vector) {
+                            const vectorString = `[${vector.join(',')}]`;
+                            await prisma.$executeRaw`UPDATE "Post" SET embedding = ${vectorString}::vector WHERE id = ${post.id}`;
+                            console.log(`[Background] Embedding generated and saved for Post ${post.id}`);
+                        }
+                    }
+
                 } catch (bgError) {
                     console.error(`[Background] AI Generation Failed for Post ${post.id}:`, bgError);
                 }

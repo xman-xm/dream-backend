@@ -31,6 +31,25 @@ export async function generateImageDescription(fileBuffer: Buffer, mimeType: str
         return text;
     } catch (error) {
         console.error("Error generating AI description:", error);
-        return null; // Return null gracefully
+        return null;
+    }
+}
+
+export async function getEmbedding(text: string): Promise<number[] | null> {
+    if (!genAI || !text.trim()) {
+        return null;
+    }
+
+    try {
+        const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+        const result = await model.embedContent(text);
+
+        if (result && result.embedding && result.embedding.values) {
+            return result.embedding.values;
+        }
+        return null;
+    } catch (error) {
+        console.error("Error generating embedding:", error);
+        return null;
     }
 }

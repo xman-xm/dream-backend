@@ -17,6 +17,13 @@ type SearchResultUser = {
     avatarUrl: string | null;
 };
 
+type SearchResultGroup = {
+    id: string;
+    name: string;
+    description: string | null;
+    avatarUrl: string | null;
+};
+
 type SearchResultPost = {
     id: string;
     caption: string | null;
@@ -25,6 +32,7 @@ type SearchResultPost = {
     aiDescription: string | null;
     createdAt: string;
     author: SearchResultUser;
+    group?: { id: string; name: string };
     _count?: {
         likes: number;
         comments: number;
@@ -34,40 +42,40 @@ type SearchResultPost = {
 
 type SearchState = {
     users: SearchResultUser[];
+    groups: SearchResultGroup[];
     posts: SearchResultPost[];
 };
 
+import { useAuth } from "../../../context/AuthContext";
+
 export default function Search() {
     const router = useRouter();
+    const { token } = useAuth();
     const [query, setQuery] = useState("");
-    const [activeTab, setActiveTab] = useState<'all' | 'users' | 'posts'>('all');
-    const [results, setResults] = useState<SearchState>({ users: [], posts: [] });
+    const [activeTab, setActiveTab] = useState<'all' | 'users' | 'groups' | 'posts'>('all');
+    const [results, setResults] = useState<SearchState>({ users: [], groups: [], posts: [] });
     const [loading, setLoading] = useState(false);
-    const [token, setToken] = useState<string | null>(null);
     const [commentModalVisible, setCommentModalVisible] = useState(false);
     const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
-
-    useEffect(() => {
-        getToken().then(setToken);
-    }, []);
 
     // Debounced Search
     useEffect(() => {
         const timer = setTimeout(() => {
             if (query.trim()) {
-                performSearch(query, activeTab);
+                performSearch(query);
             } else {
-                setResults({ users: [], posts: [] });
+                setResults({ users: [], groups: [], posts: [] });
             }
         }, 500);
 
         return () => clearTimeout(timer);
     }, [query, activeTab]);
 
-    const performSearch = async (currentQuery: string, type: string) => {
+    const performSearch = async (currentQuery: string) => {
         setLoading(true);
         try {
-            const res = await apiFetch(`/search?q=${encodeURIComponent(currentQuery)}&type=${type}`);
+            // New Smart Search API (returns all types at once)
+            const res = await apiFetch(`/search/smart?q=${encodeURIComponent(currentQuery)}`);
             if (res.ok) {
                 const data = await res.json();
                 setResults(data);
@@ -115,7 +123,7 @@ export default function Search() {
 
     const renderTabs = () => (
         <View className="flex-row px-4 py-2 border-b border-gray-100 bg-white">
-            {(['all', 'users', 'posts'] as const).map((tab) => (
+            {(['all', 'users', 'groups', 'posts'] as const).map((tab) => (
                 <TouchableOpacity
                     key={tab}
                     onPress={() => setActiveTab(tab)}
@@ -133,7 +141,16 @@ export default function Search() {
         <View className="flex-row items-center p-3 bg-white mb-1 rounded-lg">
             <View className="w-12 h-12 bg-gray-200 rounded-full mr-3 overflow-hidden">
                 {item.avatarUrl ? (
-                    <Image source={{ uri: item.avatarUrl }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                    <Image
+                        source={{
+                            uri: item.avatarUrl.startsWith('http')
+                                ? item.avatarUrl
+                                : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
+                            headers: { Authorization: `Bearer ${token}` }
+                        }}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="cover"
+                    />
                 ) : (
                     <View className="w-full h-full items-center justify-center bg-blue-100">
                         <Text className="text-blue-600 font-bold">{(item.name?.[0] || item.username?.[0] || '?').toUpperCase()}</Text>
@@ -144,8 +161,44 @@ export default function Search() {
                 <Text className="font-bold text-gray-900">{item.name || item.username}</Text>
                 <Text className="text-gray-500 text-sm">@{item.username}</Text>
             </View>
-            <TouchableOpacity className="bg-gray-100 px-4 py-2 rounded-full">
+            <TouchableOpacity
+                className="bg-gray-100 px-4 py-2 rounded-full"
+                onPress={() => router.push(`/(protected)/user/${item.id}`)}
+            >
                 <Text className="font-semibold text-gray-900 text-xs">View</Text>
+            </TouchableOpacity>
+        </View>
+    );
+
+    const renderGroupItem = ({ item }: { item: SearchResultGroup }) => (
+        <View className="flex-row items-center p-3 bg-white mb-1 rounded-lg">
+            <View className="w-12 h-12 bg-gray-200 rounded-lg mr-3 overflow-hidden">
+                {item.avatarUrl ? (
+                    <Image
+                        source={{
+                            uri: item.avatarUrl.startsWith('http')
+                                ? item.avatarUrl
+                                : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
+                            headers: { Authorization: `Bearer ${token}` }
+                        }}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="cover"
+                    />
+                ) : (
+                    <View className="w-full h-full items-center justify-center bg-indigo-100">
+                        <Text className="text-indigo-600 font-bold">{(item.name?.[0] || '?').toUpperCase()}</Text>
+                    </View>
+                )}
+            </View>
+            <View className="flex-1">
+                <Text className="font-bold text-gray-900">{item.name}</Text>
+                <Text className="text-gray-500 text-sm" numberOfLines={1}>{item.description || 'No description'}</Text>
+            </View>
+            <TouchableOpacity
+                className="bg-indigo-50 px-4 py-2 rounded-full"
+                onPress={() => router.push(`/(protected)/groups/${item.id}`)}
+            >
+                <Text className="font-semibold text-indigo-600 text-xs">View</Text>
             </TouchableOpacity>
         </View>
     );
@@ -159,7 +212,16 @@ export default function Search() {
                 <View className="flex-row items-center px-4 mb-3">
                     <View className="bg-gray-200 w-10 h-10 rounded-full flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
                         {item.author.avatarUrl ? (
-                            <Image source={{ uri: item.author.avatarUrl }} style={{ width: 40, height: 40 }} contentFit="cover" />
+                            <Image
+                                source={{
+                                    uri: item.author.avatarUrl.startsWith('http')
+                                        ? item.author.avatarUrl
+                                        : `${API_URL.replace('/api', '')}${item.author.avatarUrl}`,
+                                    headers: { Authorization: `Bearer ${token}` }
+                                }}
+                                style={{ width: 40, height: 40 }}
+                                contentFit="cover"
+                            />
                         ) : (
                             <Text className="text-gray-500 font-bold text-xs">
                                 {(item.author.name?.[0] || item.author.username?.[0] || '?').toUpperCase()}
@@ -284,6 +346,19 @@ export default function Search() {
                         </>
                     ) : null}
 
+                    {activeTab === 'all' || activeTab === 'groups' ? (
+                        <>
+                            {results.groups.length > 0 && (
+                                <View className="mb-6">
+                                    {activeTab === 'all' && <Text className="font-bold text-gray-500 mb-2 uppercase text-xs tracking-wider">Groups</Text>}
+                                    {results.groups.map(group => (
+                                        <View key={group.id}>{renderGroupItem({ item: group })}</View>
+                                    ))}
+                                </View>
+                            )}
+                        </>
+                    ) : null}
+
                     {activeTab === 'all' || activeTab === 'posts' ? (
                         <>
                             {results.posts.length > 0 && (
@@ -297,7 +372,7 @@ export default function Search() {
                         </>
                     ) : null}
 
-                    {!loading && query && results.users.length === 0 && results.posts.length === 0 && (
+                    {!loading && query && results.users.length === 0 && results.groups.length === 0 && results.posts.length === 0 && (
                         <View className="items-center justify-center py-10">
                             <Text className="text-gray-500 text-center">No results found for "{query}"</Text>
                         </View>
@@ -312,7 +387,9 @@ export default function Search() {
                 onCommentAdded={() => {
                     // Refresh search results to update comment count
                     if (query.trim()) {
-                        performSearch(query, activeTab);
+                        if (query.trim()) {
+                            performSearch(query);
+                        }
                     }
                 }}
             />

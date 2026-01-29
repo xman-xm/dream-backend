@@ -2,13 +2,17 @@ import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from "react-native";
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { Ionicons } from '@expo/vector-icons';
 import { apiFetch, API_URL } from "../../../lib/api";
 import { getToken } from "../../../lib/auth-store";
 import { useAuth } from "../../../context/AuthContext";
 
 export default function CreatePost() {
     const router = useRouter();
+    const params = useLocalSearchParams();
+    const groupId = typeof params.groupId === 'string' ? params.groupId : null;
+
     const { user } = useAuth();
     const [image, setImage] = useState<string | null>(null);
     const [caption, setCaption] = useState("");
@@ -57,6 +61,9 @@ export default function CreatePost() {
             const formData = new FormData();
             formData.append('caption', caption);
             formData.append('authorId', user.id);
+            if (groupId) {
+                formData.append('groupId', groupId);
+            }
 
             const filename = image.split('/').pop() || "upload.jpg";
             const match = /\.(\w+)$/.exec(filename);
@@ -77,8 +84,14 @@ export default function CreatePost() {
             if (response.ok) {
                 setCaption("");
                 setImage(null);
-                // Go back to feed
-                router.push("/(protected)/(tabs)");
+                setCaption("");
+                setImage(null);
+                // Return to previous screen (Group Detail) if from group
+                if (groupId) {
+                    router.back();
+                } else {
+                    router.push("/(protected)/(tabs)");
+                }
             } else {
                 const err = await response.json();
                 Alert.alert("Error", err.error || "Failed to upload");
@@ -144,6 +157,12 @@ export default function CreatePost() {
                 )}
 
                 {/* Caption Input */}
+                {groupId && (
+                    <View className="w-full bg-blue-50 p-3 rounded-lg flex-row items-center mb-4 border border-blue-100">
+                        <Ionicons name="people" size={20} color="#2563EB" />
+                        <Text className="text-blue-700 font-bold ml-2">Posting to Group</Text>
+                    </View>
+                )}
                 <View className="w-full">
                     <TextInput
                         className="w-full text-lg text-gray-900 min-h-[100px]"
