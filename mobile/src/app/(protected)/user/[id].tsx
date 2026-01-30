@@ -67,6 +67,8 @@ type UserProfile = {
 
 type FriendshipStatus = 'NONE' | 'FRIENDS' | 'SENT_REQUEST' | 'RECEIVED_REQUEST' | 'SELF';
 
+import { PostItem } from "../../../components/PostItem";
+
 export default function UserProfileScreen() {
     const { id } = useLocalSearchParams();
     console.log('[Mobile] UserProfileScreen mounted with ID:', id);
@@ -304,98 +306,18 @@ export default function UserProfileScreen() {
         </View>
     );
 
-    const renderItem = ({ item }: { item: Post }) => {
-        const isLiked = item.likes && item.likes.length > 0;
-
-        return (
-            <View className="bg-white mb-4 py-4 shadow-sm">
-                <View className="flex-row items-center px-4 mb-3">
-                    <View className="bg-gray-200 w-10 h-10 rounded-full flex items-center justify-center mr-3 overflow-hidden border border-gray-100">
-                        {item.author.avatarUrl ? (
-                            <Image
-                                source={{
-                                    uri: item.author.avatarUrl.startsWith('http')
-                                        ? item.author.avatarUrl
-                                        : `${API_URL.replace('/api', '')}${item.author.avatarUrl}`,
-                                    headers: { Authorization: `Bearer ${token}` }
-                                }}
-                                style={{ width: 40, height: 40 }}
-                                contentFit="cover"
-                            />
-                        ) : (
-                            <Text className="text-gray-500 font-bold text-xs">
-                                {(item.author.name?.[0] || item.author.username?.[0] || '?').toUpperCase()}
-                            </Text>
-                        )}
-                    </View>
-                    <View>
-                        <Text className="font-bold text-[14px] text-gray-900">{item.author.name || item.author.username || 'Unknown User'}</Text>
-                        <Text className="text-gray-500 text-[11px]">{dayjs(item.createdAt).fromNow(true)}</Text>
-                    </View>
-                </View>
-
-                {/* Media */}
-                {item.media && token && (
-                    <View className="w-full aspect-[9/16] bg-gray-100 mb-3">
-                        <Image
-                            source={{
-                                uri: item.media.startsWith('http') ? item.media : `${API_URL.replace('/api', '')}${item.media}`,
-                                headers: { Authorization: `Bearer ${token}` }
-                            }}
-                            style={{ width: '100%', height: '100%' }}
-                            contentFit="cover"
-                            transition={200}
-                        />
-                    </View>
-                )}
-
-                {/* Interaction Icons */}
-                <View className="flex-row items-center px-4 py-3">
-                    <TouchableOpacity
-                        className="flex-row items-center mr-5"
-                        onPress={() => handleLike(item.id)}
-                    >
-                        <Ionicons
-                            name={isLiked ? "heart" : "heart-outline"}
-                            size={24}
-                            color={isLiked ? "#ef4444" : "#000"}
-                        />
-                        {(item._count?.likes || 0) > 0 && (
-                            <Text className="ml-1 text-sm font-medium">{item._count.likes}</Text>
-                        )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        className="flex-row items-center mr-5"
-                        onPress={() => {
-                            setSelectedPostId(item.id);
-                            setCommentModalVisible(true);
-                        }}
-                    >
-                        <Ionicons name="chatbubble-outline" size={24} color="#000" />
-                        {(item._count?.comments || 0) > 0 && (
-                            <Text className="ml-1 text-sm font-medium">{item._count.comments}</Text>
-                        )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity className="mr-5">
-                        <Ionicons name="paper-plane-outline" size={24} color="#000" />
-                    </TouchableOpacity>
-                    <View className="flex-1" />
-                    <TouchableOpacity>
-                        <Ionicons name="bookmark-outline" size={24} color="#000" />
-                    </TouchableOpacity>
-                </View>
-
-                {/* Caption */}
-                <View className="px-4 pb-2">
-                    <Text className="text-gray-900 text-[14px] leading-5">
-                        {item.caption || '...'}
-                    </Text>
-                </View>
-            </View>
-        );
-    };
+    const renderItem = ({ item }: { item: Post }) => (
+        <PostItem
+            post={item as any}
+            token={token}
+            onLike={handleLike}
+            onComment={(id) => {
+                setSelectedPostId(id);
+                setCommentModalVisible(true);
+            }}
+            onUserPress={(userId) => router.push(`/(protected)/user/${userId}`)}
+        />
+    );
 
     if (loading) {
         return (

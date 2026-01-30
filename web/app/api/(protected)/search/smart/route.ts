@@ -20,7 +20,8 @@ export async function GET(request: Request) {
         }
 
         const normalizedQuery = query.trim().toLowerCase()
-        const embedding = await getEmbedding(query.trim())
+        const isShortQuery = normalizedQuery.length < 3
+        const embedding = !isShortQuery ? await getEmbedding(query.trim()) : null
 
         // --- 1. SEARCH USERS (Keyword + Vector) ---
         let users: any[] = [];
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
                 WHERE 
                    (username ILIKE ${'%' + normalizedQuery + '%'} OR name ILIKE ${'%' + normalizedQuery + '%'} ) 
                    OR 
-                   (embedding <=> ${vectorStr}::vector) < 0.8
+                   (embedding <=> ${vectorStr}::vector) < 0.35
                 ORDER BY 
                    CASE WHEN LOWER(username) = ${normalizedQuery} THEN 0 ELSE 1 END,
                    ((embedding <=> ${vectorStr}::vector) * 0.4 + (1 - word_similarity(${normalizedQuery}, username || ' ' || COALESCE(name, ''))) * 0.6) ASC
@@ -65,7 +66,7 @@ export async function GET(request: Request) {
                 WHERE 
                    (name ILIKE ${'%' + normalizedQuery + '%'} OR description ILIKE ${'%' + normalizedQuery + '%'})
                    OR
-                   (embedding <=> ${vectorStr}::vector) < 0.75
+                   (embedding <=> ${vectorStr}::vector) < 0.5
                 ORDER BY 
                    CASE WHEN LOWER(name) = ${normalizedQuery} THEN 0 ELSE 1 END,
                    ((embedding <=> ${vectorStr}::vector) * 0.4 + (1 - word_similarity(${normalizedQuery}, name || ' ' || COALESCE(description, ''))) * 0.6) ASC
@@ -98,7 +99,7 @@ export async function GET(request: Request) {
                 WHERE 
                    (p.caption ILIKE ${'%' + normalizedQuery + '%'} OR p."aiDescription" ILIKE ${'%' + normalizedQuery + '%'})
                    OR
-                   (p.embedding <=> ${vectorStr}::vector) < 0.75
+                   (p.embedding <=> ${vectorStr}::vector) < 0.5
                 ORDER BY 
                    ((p.embedding <=> ${vectorStr}::vector) * 0.5 + (1 - word_similarity(${normalizedQuery}, COALESCE(p.caption, '') || ' ' || COALESCE(p."aiDescription", ''))) * 0.5) ASC
                 LIMIT 30

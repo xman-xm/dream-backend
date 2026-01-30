@@ -46,7 +46,8 @@ export async function POST(req: Request) {
                 email: true,
                 name: true,
                 username: true,
-                avatarUrl: true
+                avatarUrl: true,
+                bio: true
             }
         })
 
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
 
         return Response.json({
             message: "User created successfully",
-            user,
+            user: { ...user, _count: { posts: 0, friends: 0 } },
             token
         }, { status: 201 })
 

@@ -32,11 +32,31 @@ export async function validateCredentials(
         return null
     }
 
-    // 5. Return user data (without password!)
+    // 5. Calculate counts
+    const friendsCount = await prisma.friendship.count({
+        where: {
+            OR: [
+                { requesterId: user.id, status: 'ACCEPTED' },
+                { addresseeId: user.id, status: 'ACCEPTED' }
+            ]
+        }
+    });
+
+    const postsCount = await prisma.post.count({
+        where: { authorId: user.id }
+    });
+
+    // 6. Return user data (without password!)
     return {
         id: user.id,
         email: user.email,
         name: user.name,
-        image: user.avatarUrl
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+        bio: user.bio,
+        _count: {
+            friends: friendsCount,
+            posts: postsCount
+        }
     }
 }
