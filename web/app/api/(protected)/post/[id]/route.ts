@@ -2,6 +2,44 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getCurrentUser } from "@/lib/auth-unified"
 
+// Get a single post
+export async function GET(
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    const user = await getCurrentUser(request)
+
+    if (!user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    try {
+        const { id } = await params
+        const post = await prisma.post.findUnique({
+            where: { id },
+            include: {
+                author: {
+                    select: {
+                        id: true,
+                        username: true,
+                        name: true,
+                        avatarUrl: true
+                    }
+                }
+            }
+        })
+
+        if (!post) {
+            return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+        }
+
+        return NextResponse.json(post)
+    } catch (error) {
+        console.error('Error fetching post:', error)
+        return NextResponse.json({ error: 'Error fetching post' }, { status: 500 })
+    }
+}
+
 // Update a post
 export async function PUT(
     request: Request,
@@ -15,6 +53,21 @@ export async function PUT(
 
     try {
         const { id } = await params
+
+        // Find existing post to check ownership
+        const existingPost = await prisma.post.findUnique({
+            where: { id },
+            select: { authorId: true }
+        })
+
+        if (!existingPost) {
+            return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+        }
+
+        if (existingPost.authorId !== user.id) {
+            return NextResponse.json({ error: 'You are not authorized to update this post' }, { status: 403 })
+        }
+
         let body
         try {
             body = await request.json()
@@ -35,10 +88,6 @@ export async function PUT(
             mediaUrl = media.url;
             mediaType = media.type;
         }
-        // If media is not passed, we might want to keep existing. 
-        // But for explicit update, if values are undefined they won't overwrite in prisma unless we explicitly check.
-        // Prisma update ignores undefined values in 'data' usually? No, it doesn't automatically.
-        // We need to construct the data object carefully.
 
         const updateData: any = {}
         if (caption !== undefined) updateData.caption = caption
@@ -73,6 +122,21 @@ export async function DELETE(
 
     try {
         const { id } = await params
+
+        // Find existing post to check ownership
+        const existingPost = await prisma.post.findUnique({
+            where: { id },
+            select: { authorId: true }
+        })
+
+        if (!existingPost) {
+            return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+        }
+
+        if (existingPost.authorId !== user.id) {
+            return NextResponse.json({ error: 'You are not authorized to delete this post' }, { status: 403 })
+        }
+
         await prisma.post.delete({
             where: { id }
         })

@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import dayjs from "dayjs";
 import { API_URL } from "../lib/api";
+import { Video, ResizeMode } from "expo-av";
 
 type Author = {
     id: string;
@@ -29,17 +30,21 @@ type Post = {
 interface PostItemProps {
     post: Post;
     token: string | null;
+    currentUserId?: string;
     onLike: (postId: string) => void;
     onComment: (postId: string) => void;
     onUserPress: (userId: string) => void;
+    onOptionPress?: (post: Post) => void;
 }
 
 export const PostItem: React.FC<PostItemProps> = ({
     post,
     token,
+    currentUserId,
     onLike,
     onComment,
-    onUserPress
+    onUserPress,
+    onOptionPress
 }) => {
     const isLiked = post.likes && post.likes.length > 0;
 
@@ -74,20 +79,42 @@ export const PostItem: React.FC<PostItemProps> = ({
                         <Text className="text-gray-500 text-[11px]">{dayjs(post.createdAt).fromNow(true)}</Text>
                     </View>
                 </TouchableOpacity>
+
+                <View className="flex-1" />
+
+                {(currentUserId === post.author.id && onOptionPress) && (
+                    <TouchableOpacity onPress={() => onOptionPress(post)}>
+                        <Ionicons name="ellipsis-horizontal" size={20} color="#666" />
+                    </TouchableOpacity>
+                )}
             </View>
 
             {/* Media */}
             {token && (
                 <View className="w-full aspect-[9/16] bg-gray-100 mb-3">
-                    <Image
-                        source={{
-                            uri: post.media.startsWith('http') ? post.media : `${API_URL.replace('/api', '')}${post.media}`,
-                            headers: { Authorization: `Bearer ${token}` }
-                        }}
-                        style={{ width: '100%', height: '100%' }}
-                        contentFit="cover"
-                        transition={200}
-                    />
+                    {post.type === 'VIDEO' ? (
+                        <Video
+                            style={{ width: '100%', height: '100%' }}
+                            source={{
+                                uri: post.media.startsWith('http') ? post.media : `${API_URL.replace('/api', '')}${post.media}`,
+                                headers: { Authorization: `Bearer ${token}` }
+                            }}
+                            useNativeControls={true}
+                            resizeMode={ResizeMode.COVER}
+                            isLooping
+                            shouldPlay={false} // Autoplay policy can be added later
+                        />
+                    ) : (
+                        <Image
+                            source={{
+                                uri: post.media.startsWith('http') ? post.media : `${API_URL.replace('/api', '')}${post.media}`,
+                                headers: { Authorization: `Bearer ${token}` }
+                            }}
+                            style={{ width: '100%', height: '100%' }}
+                            contentFit="cover"
+                            transition={200}
+                        />
+                    )}
                 </View>
             )}
 

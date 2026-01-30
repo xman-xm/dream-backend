@@ -92,16 +92,18 @@ model Group {
   members     GroupMember[]
   posts       Post[]
   embedding   Unsupported("vector(768)")?
+  isPrivate   Boolean                     @default(false)
 }
 
 model GroupMember {
-  id       String    @id @default(cuid())
+  id       String            @id @default(cuid())
   groupId  String
   userId   String
-  role     GroupRole @default(MEMBER)
-  joinedAt DateTime  @default(now())
-  group    Group     @relation(fields: [groupId], references: [id])
-  user     User      @relation(fields: [userId], references: [id])
+  role     GroupRole         @default(MEMBER)
+  status   GroupMemberStatus @default(ACCEPTED)
+  joinedAt DateTime          @default(now())
+  group    Group             @relation(fields: [groupId], references: [id])
+  user     User              @relation(fields: [userId], references: [id])
 
   @@unique([groupId, userId])
 }
@@ -186,6 +188,12 @@ enum FriendshipStatus {
 enum GroupRole {
   ADMIN
   MEMBER
+}
+
+enum GroupMemberStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
 }
 
 enum MediaType {

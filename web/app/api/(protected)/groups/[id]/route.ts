@@ -24,7 +24,7 @@ export async function GET(
             where: { id: groupId },
             include: {
                 _count: {
-                    select: { members: true }
+                    select: { members: { where: { status: 'ACCEPTED' } } }
                 }
             }
         })
@@ -44,27 +44,37 @@ export async function GET(
         })
 
         // Fetch posts for this group
-        const posts = await prisma.post.findMany({
-            where: {
-                groupId: groupId
-            },
-            orderBy: {
-                createdAt: 'desc'
-            },
-            include: {
-                author: true,
-                likes: {
-                    where: { userId: user.id }
+        // Check access permission
+        const isMember = membership?.status === 'ACCEPTED'
+        const isAdmin = membership?.role === 'ADMIN'
+        const canViewPosts = !group.isPrivate || isMember || isAdmin
+
+        // Fetch posts for this group if allowed
+        let posts: any[] = []
+
+        if (canViewPosts) {
+            posts = await prisma.post.findMany({
+                where: {
+                    groupId: groupId
                 },
-                _count: {
-                    select: {
-                        likes: true,
-                        comments: true
+                orderBy: {
+                    createdAt: 'desc'
+                },
+                include: {
+                    author: true,
+                    likes: {
+                        where: { userId: user.id }
+                    },
+                    _count: {
+                        select: {
+                            likes: true,
+                            comments: true
+                        }
                     }
-                }
-            },
-            take: 50
-        })
+                },
+                take: 50
+            })
+        }
 
         const enhancedPosts = posts.map(post => ({
             ...post,
@@ -75,7 +85,8 @@ export async function GET(
             group: {
                 ...group,
                 memberCount: group._count.members,
-                isMember: !!membership,
+                isMember: !!membership && membership.status === 'ACCEPTED',
+                membershipStatus: membership?.status || null,
                 role: membership?.role || null
             },
             posts: enhancedPosts

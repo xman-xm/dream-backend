@@ -135,8 +135,8 @@ export async function POST(request: Request) {
             // Set secure API URL
             mediaUrl = `/api/storage/${filename}`
 
-            // Simple type detection
-            if (file.type.startsWith('video/')) {
+            // Robust type detection
+            if (file.type.startsWith('video/') || filename.endsWith('.mp4') || filename.endsWith('.mov')) {
                 mediaType = 'VIDEO'
             }
         }
@@ -206,24 +206,21 @@ export async function POST(request: Request) {
         }
 
         // --- Background AI Task ---
-        if (file && mediaType === 'IMAGE') {
-            (async () => {
-                try {
-                    console.log(`[Background] Starting AI description for Post ${post.id}...`);
+        (async () => {
+            try {
+                // Re-read file buffer for AI context
+                // In production, you might pass the filepath to a worker
+                let bgBuffer: Buffer | undefined;
+                if (file) {
+                    const bgBytes = await file.arrayBuffer();
+                    bgBuffer = Buffer.from(bgBytes);
+                }
+
+                if (mediaType === 'IMAGE' && bgBuffer) {
+                    console.log(`[Background] Starting AI description for IMAGE Post ${post.id}...`);
                     const { generateImageDescription, getEmbedding } = await import("@/lib/gemini");
 
-                    // Re-read buffer because we need it for the AI (file stream might be consumed? 
-                    // actually we read 'bytes' earlier but scope is lost. 
-                    // Ideally we pass 'buffer' if we had it in scope.
-                    // Let's rely on re-reading if 'file' object is still valid, or duplicate buffer earlier.)
-                    // Optimization: We did `await file.arrayBuffer()` inside the IF block earlier. 
-                    // Let's move the buffer reading UP so we can pass it here. 
-
-                    // Actually, let's just re-read it safely.
-                    const bgBytes = await file.arrayBuffer();
-                    const bgBuffer = Buffer.from(bgBytes);
-
-                    const description = await generateImageDescription(bgBuffer, file.type);
+                    const description = await generateImageDescription(bgBuffer, file!.type);
                     let finalText = caption || '';
 
                     if (description) {
@@ -235,21 +232,45 @@ export async function POST(request: Request) {
                         finalText += " " + description;
                     }
 
-                    // Generate Embedding (Caption + AI Description)
+                    // Generate Embedding
                     if (finalText.trim()) {
                         const vector = await getEmbedding(finalText.trim());
                         if (vector) {
                             const vectorString = `[${vector.join(',')}]`;
                             await prisma.$executeRaw`UPDATE "Post" SET embedding = ${vectorString}::vector WHERE id = ${post.id}`;
-                            console.log(`[Background] Embedding generated and saved for Post ${post.id}`);
                         }
                     }
+                } else if (mediaType === 'VIDEO' && bgBuffer) {
+                    console.log(`[Background] Starting AI analysis for VIDEO Post ${post.id}...`);
+                    const { analyzeVideo, getEmbedding } = await import("@/lib/gemini");
+                    const description = await analyzeVideo(bgBuffer, file!.type);
 
-                } catch (bgError) {
-                    console.error(`[Background] AI Generation Failed for Post ${post.id}:`, bgError);
+                    let finalText = caption || '';
+
+                    if (description) {
+                        await prisma.post.update({
+                            where: { id: post.id },
+                            data: { aiDescription: description }
+                        });
+                        console.log(`[Background] AI description updated for VIDEO Post ${post.id}`);
+                        finalText += " " + description;
+                    }
+
+                    // Generate Embedding
+                    if (finalText.trim()) {
+                        const vector = await getEmbedding(finalText.trim());
+                        if (vector) {
+                            const vectorString = `[${vector.join(',')}]`;
+                            await prisma.$executeRaw`UPDATE "Post" SET embedding = ${vectorString}::vector WHERE id = ${post.id}`;
+                            console.log(`[Background] Embedding generated and saved for VIDEO Post ${post.id}`);
+                        }
+                    }
                 }
-            })();
-        }
+
+            } catch (bgError) {
+                console.error(`[Background] AI Generation Failed for Post ${post.id}:`, bgError);
+            }
+        })();
         // --------------------------
 
         return NextResponse.json(post)

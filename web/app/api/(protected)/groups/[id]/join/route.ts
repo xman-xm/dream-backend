@@ -22,7 +22,8 @@ export async function POST(
     try {
         // Check if group exists
         const group = await prisma.group.findUnique({
-            where: { id: groupId }
+            where: { id: groupId },
+            select: { isPrivate: true, id: true }
         })
 
         if (!group) {
@@ -44,11 +45,15 @@ export async function POST(
         }
 
         // Join Group
+        // Join Group
+        const status = group.isPrivate ? 'PENDING' : 'ACCEPTED'
+
         const membership = await prisma.groupMember.create({
             data: {
                 groupId,
                 userId: user.id,
-                role: 'MEMBER'
+                role: 'MEMBER',
+                status
             }
         })
 

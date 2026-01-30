@@ -24,7 +24,7 @@ dayjs.updateLocale('en', {
 });
 
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, FlatList, RefreshControl } from "react-native";
+import { View, Text, TouchableOpacity, FlatList, RefreshControl, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../../context/AuthContext";
 import { apiFetch, API_URL } from "../../../lib/api";
@@ -43,9 +43,9 @@ type Author = {
 
 type Post = {
     id: string;
-    caption: string;
-    media?: string;
-    type?: 'IMAGE' | 'VIDEO';
+    caption: string | null;
+    media: string;
+    type: string;
     createdAt: string;
     author: Author;
     _count?: {
@@ -131,6 +131,65 @@ export default function Profile() {
         }
     };
 
+    const handlePostOptions = (post: Post) => {
+        Alert.alert(
+            "Post Options",
+            "What would you like to do?",
+            [
+                {
+                    text: "Edit Caption",
+                    onPress: () => router.push(`/(protected)/post/edit/${post.id}`)
+                },
+                {
+                    text: "Delete Post",
+                    style: "destructive",
+                    onPress: () => confirmDelete(post.id)
+                },
+                {
+                    text: "Cancel",
+                    style: "cancel"
+                }
+            ]
+        );
+    };
+
+    const confirmDelete = (postId: string) => {
+        Alert.alert(
+            "Delete Post",
+            "Are you sure you want to delete this post? This action cannot be undone.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: () => handleDeletePost(postId)
+                }
+            ]
+        );
+    };
+
+    const handleDeletePost = async (postId: string) => {
+        try {
+            const response = await apiFetch(`/post/${postId}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                // Remove from local state
+                setPosts(prev => prev.filter(p => p.id !== postId));
+                // Refresh profile stats (post count)
+                refreshUserProfile();
+                Alert.alert("Success", "Post deleted successfully.");
+            } else {
+                const data = await response.json();
+                Alert.alert("Error", data.error || "Failed to delete post.");
+            }
+        } catch (error) {
+            console.error('Delete error:', error);
+            Alert.alert("Error", "Network error.");
+        }
+    };
+
     const renderHeader = () => (
         <View>
             {/* Profile Info Section */}
@@ -203,12 +262,14 @@ export default function Profile() {
         <PostItem
             post={item as any}
             token={token}
+            currentUserId={user?.id}
             onLike={handleLike}
             onComment={(id) => {
                 setSelectedPostId(id);
                 setCommentModalVisible(true);
             }}
             onUserPress={(userId) => router.push(`/(protected)/user/${userId}`)}
+            onOptionPress={handlePostOptions}
         />
     );
 

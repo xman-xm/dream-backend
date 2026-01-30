@@ -41,6 +41,8 @@ type GroupDetail = {
     avatarUrl: string | null;
     memberCount: number;
     isMember: boolean;
+    membershipStatus: 'PENDING' | 'ACCEPTED' | 'DECLINED' | null;
+    isPrivate: boolean;
     role: string | null;
 };
 
@@ -151,20 +153,48 @@ export default function GroupDetailScreen() {
                     {group.description && (
                         <Text className="text-gray-500 text-center mt-2 px-4 leading-5">{group.description}</Text>
                     )}
-                    <Text className="text-gray-400 text-sm mt-3 font-medium">{group.memberCount} Members</Text>
+
+                    <View className="flex-row items-center mt-3">
+                        {group.isPrivate && (
+                            <View className="bg-gray-100 px-3 py-1 rounded-full mr-2 flex-row items-center">
+                                <Ionicons name="lock-closed" size={12} color="#6B7280" />
+                                <Text className="text-gray-500 text-xs font-medium ml-1">Private</Text>
+                            </View>
+                        )}
+                        <Text className="text-gray-400 text-sm font-medium">{group.memberCount} Members</Text>
+                    </View>
+
+                    {group.role === 'ADMIN' && (
+                        <TouchableOpacity
+                            className="bg-gray-100 px-4 py-2 rounded-full mt-4 flex-row items-center"
+                            onPress={() => router.push(`/(protected)/groups/${group.id}/requests`)}
+                        >
+                            <Ionicons name="people-circle" size={20} color="#4B5563" />
+                            <Text className="text-gray-700 font-medium ml-2">Manage Requests</Text>
+                        </TouchableOpacity>
+                    )}
 
                     {!group.isMember ? (
-                        <TouchableOpacity
-                            className="bg-blue-600 px-8 py-3 rounded-full mt-6 shadow-md shadow-blue-200"
-                            onPress={handleJoin}
-                            disabled={joining}
-                        >
-                            {joining ? (
-                                <ActivityIndicator color="white" />
-                            ) : (
-                                <Text className="text-white font-bold text-base">Join Group</Text>
-                            )}
-                        </TouchableOpacity>
+                        group.membershipStatus === 'PENDING' ? (
+                            <TouchableOpacity
+                                className="bg-gray-300 px-8 py-3 rounded-full mt-6"
+                                disabled={true}
+                            >
+                                <Text className="text-gray-600 font-bold text-base">Request Pending</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity
+                                className="bg-blue-600 px-8 py-3 rounded-full mt-6 shadow-md shadow-blue-200"
+                                onPress={handleJoin}
+                                disabled={joining}
+                            >
+                                {joining ? (
+                                    <ActivityIndicator color="white" />
+                                ) : (
+                                    <Text className="text-white font-bold text-base">{group.isPrivate ? "Request to Join" : "Join Group"}</Text>
+                                )}
+                            </TouchableOpacity>
+                        )
                     ) : (
                         <View className="flex-row mt-6">
                             <TouchableOpacity className="bg-gray-100 px-6 py-3 rounded-full mr-2">

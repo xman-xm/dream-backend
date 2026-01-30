@@ -33,7 +33,11 @@ export async function GET(request: Request) {
                 word_similarity(${normalizedQuery}, username || ' ' || COALESCE(name, '')) as keyword_sim
                 FROM "User"
                 WHERE 
-                   (username ILIKE ${'%' + normalizedQuery + '%'} OR name ILIKE ${'%' + normalizedQuery + '%'} ) 
+                   (
+                       username ILIKE ${normalizedQuery + '%'} OR 
+                       name ILIKE ${normalizedQuery + '%'} OR 
+                       name ILIKE ${'% ' + normalizedQuery + '%'}
+                   ) 
                    OR 
                    (embedding <=> ${vectorStr}::vector) < 0.35
                 ORDER BY 
@@ -45,8 +49,9 @@ export async function GET(request: Request) {
             users = await prisma.user.findMany({
                 where: {
                     OR: [
-                        { username: { contains: normalizedQuery, mode: 'insensitive' } },
-                        { name: { contains: normalizedQuery, mode: 'insensitive' } }
+                        { username: { startsWith: normalizedQuery, mode: 'insensitive' } },
+                        { name: { startsWith: normalizedQuery, mode: 'insensitive' } },
+                        { name: { contains: ' ' + normalizedQuery, mode: 'insensitive' } }
                     ]
                 },
                 select: { id: true, username: true, name: true, avatarUrl: true, bio: true },
@@ -64,9 +69,14 @@ export async function GET(request: Request) {
                 word_similarity(${normalizedQuery}, name || ' ' || COALESCE(description, '')) as keyword_sim
                 FROM "Group"
                 WHERE 
-                   (name ILIKE ${'%' + normalizedQuery + '%'} OR description ILIKE ${'%' + normalizedQuery + '%'})
+                   (
+                       name ILIKE ${normalizedQuery + '%'} OR 
+                       name ILIKE ${'% ' + normalizedQuery + '%'} OR 
+                       description ILIKE ${normalizedQuery + '%'} OR 
+                       description ILIKE ${'% ' + normalizedQuery + '%'}
+                   )
                    OR
-                   (embedding <=> ${vectorStr}::vector) < 0.5
+                   (embedding <=> ${vectorStr}::vector) < 0.35
                 ORDER BY 
                    CASE WHEN LOWER(name) = ${normalizedQuery} THEN 0 ELSE 1 END,
                    ((embedding <=> ${vectorStr}::vector) * 0.4 + (1 - word_similarity(${normalizedQuery}, name || ' ' || COALESCE(description, ''))) * 0.6) ASC
@@ -76,8 +86,10 @@ export async function GET(request: Request) {
             groups = await prisma.group.findMany({
                 where: {
                     OR: [
-                        { name: { contains: normalizedQuery, mode: 'insensitive' } },
-                        { description: { contains: normalizedQuery, mode: 'insensitive' } }
+                        { name: { startsWith: normalizedQuery, mode: 'insensitive' } },
+                        { name: { contains: ' ' + normalizedQuery, mode: 'insensitive' } },
+                        { description: { startsWith: normalizedQuery, mode: 'insensitive' } },
+                        { description: { contains: ' ' + normalizedQuery, mode: 'insensitive' } }
                     ]
                 },
                 select: { id: true, name: true, description: true, avatarUrl: true },
@@ -93,15 +105,18 @@ export async function GET(request: Request) {
                 SELECT p.id, p.caption, p.media, p.type, p."aiDescription", p."createdAt",
                        u.id as "authorId", u.username as "authorUsername", u.name as "authorName", u."avatarUrl" as "authorAvatar",
                        (p.embedding <=> ${vectorStr}::vector) as distance,
-                       word_similarity(${normalizedQuery}, COALESCE(p.caption, '') || ' ' || COALESCE(p."aiDescription", '')) as keyword_sim
+                       word_similarity(${normalizedQuery}, COALESCE(p."aiDescription", '')) as keyword_sim
                 FROM "Post" p
                 JOIN "User" u ON p."authorId" = u.id
                 WHERE 
-                   (p.caption ILIKE ${'%' + normalizedQuery + '%'} OR p."aiDescription" ILIKE ${'%' + normalizedQuery + '%'})
+                   (
+                       p."aiDescription" ILIKE ${normalizedQuery + '%'} OR 
+                       p."aiDescription" ILIKE ${'% ' + normalizedQuery + '%'}
+                   )
                    OR
-                   (p.embedding <=> ${vectorStr}::vector) < 0.5
+                   (p.embedding <=> ${vectorStr}::vector) < 0.35
                 ORDER BY 
-                   ((p.embedding <=> ${vectorStr}::vector) * 0.5 + (1 - word_similarity(${normalizedQuery}, COALESCE(p.caption, '') || ' ' || COALESCE(p."aiDescription", ''))) * 0.5) ASC
+                   ((p.embedding <=> ${vectorStr}::vector) * 0.5 + (1 - word_similarity(${normalizedQuery}, COALESCE(p."aiDescription", ''))) * 0.5) ASC
                 LIMIT 30
              `;
 
@@ -126,8 +141,8 @@ export async function GET(request: Request) {
             const postData = await prisma.post.findMany({
                 where: {
                     OR: [
-                        { caption: { contains: normalizedQuery, mode: 'insensitive' } },
-                        { aiDescription: { contains: normalizedQuery, mode: 'insensitive' } }
+                        { aiDescription: { startsWith: normalizedQuery, mode: 'insensitive' } },
+                        { aiDescription: { contains: ' ' + normalizedQuery, mode: 'insensitive' } }
                     ]
                 },
                 include: {

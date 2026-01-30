@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, Image, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,7 @@ export default function CreateGroup() {
     const { token } = useAuth();
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
+    const [isPrivate, setIsPrivate] = useState(false);
     const [image, setImage] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
@@ -37,6 +38,7 @@ export default function CreateGroup() {
         try {
             const formData = new FormData();
             formData.append('name', name);
+            formData.append('isPrivate', String(isPrivate));
             if (description) formData.append('description', description);
 
             if (image) {
@@ -114,6 +116,20 @@ export default function CreateGroup() {
                     onChangeText={setDescription}
                     multiline
                     textAlignVertical="top"
+                />
+            </View>
+
+            <View className="flex-row items-center justify-between mb-8 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                <View>
+                    <Text className="text-gray-900 font-bold text-base">Private Group</Text>
+                    <Text className="text-gray-500 text-xs mt-1">Only members can see posts and join.</Text>
+                </View>
+                <Switch
+                    trackColor={{ false: "#D1D5DB", true: "#93C5FD" }}
+                    thumbColor={isPrivate ? "#2563EB" : "#F3F4F6"}
+                    ios_backgroundColor="#3e3e3e"
+                    onValueChange={setIsPrivate}
+                    value={isPrivate}
                 />
             </View>
 

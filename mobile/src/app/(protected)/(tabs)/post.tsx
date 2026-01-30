@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from '@expo/vector-icons';
+import { Video, ResizeMode } from 'expo-av';
 import { apiFetch, API_URL } from "../../../lib/api";
 import { getToken } from "../../../lib/auth-store";
 import { useAuth } from "../../../context/AuthContext";
@@ -14,14 +15,15 @@ export default function CreatePost() {
     const groupId = typeof params.groupId === 'string' ? params.groupId : null;
 
     const { user } = useAuth();
-    const [image, setImage] = useState<string | null>(null);
+    const [media, setMedia] = useState<string | null>(null);
+    const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
     const [caption, setCaption] = useState("");
     const [uploading, setUploading] = useState(false);
 
     const pickImage = async (useCamera: boolean) => {
         let result;
         const options: ImagePicker.ImagePickerOptions = {
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ImagePicker.MediaTypeOptions.All,
             allowsEditing: true,
             aspect: [9, 16],
             quality: 0.8,
@@ -37,7 +39,9 @@ export default function CreatePost() {
             }
 
             if (!result.canceled) {
-                setImage(result.assets[0].uri);
+                const asset = result.assets[0];
+                setMedia(asset.uri);
+                setMediaType(asset.type === 'video' ? 'video' : 'image');
             }
         } catch (error) {
             console.error("Error picking image:", error);
@@ -46,7 +50,7 @@ export default function CreatePost() {
     };
 
     const handleShare = async () => {
-        if (!image) return;
+        if (!media) return;
 
         if (!user?.id) {
             Alert.alert("Error", "User identification missing. Please restart app.");
@@ -65,12 +69,19 @@ export default function CreatePost() {
                 formData.append('groupId', groupId);
             }
 
-            const filename = image.split('/').pop() || "upload.jpg";
+            const filename = media.split('/').pop() || (mediaType === 'video' ? "upload.mp4" : "upload.jpg");
+
+            // Allow override based on actual media type if simple inference fails
+            let type = mediaType === 'video' ? 'video/mp4' : 'image/jpeg';
+
+            // Try to infer from extension if available
             const match = /\.(\w+)$/.exec(filename);
-            const type = match ? `image/${match[1]}` : `image/jpeg`;
+            if (match) {
+                type = `${mediaType}/${match[1]}`;
+            }
 
             // @ts-ignore: FormData expects specific object structure in RN
-            formData.append('image', { uri: image, name: filename, type });
+            formData.append('image', { uri: media, name: filename, type });
 
             const response = await fetch(`${API_URL}/post`, {
                 method: 'POST',
@@ -83,9 +94,8 @@ export default function CreatePost() {
 
             if (response.ok) {
                 setCaption("");
-                setImage(null);
-                setCaption("");
-                setImage(null);
+                setMedia(null);
+                setMediaType('image');
                 // Return to previous screen (Group Detail) if from group
                 if (groupId) {
                     router.back();
@@ -112,8 +122,8 @@ export default function CreatePost() {
                 <Text className="text-xl font-bold text-gray-900">New Post</Text>
                 <TouchableOpacity
                     onPress={handleShare}
-                    disabled={!image || uploading}
-                    className={`${!image || uploading ? 'opacity-50' : ''}`}
+                    disabled={!media || uploading}
+                    className={`${!media || uploading ? 'opacity-50' : ''}`}
                 >
                     {uploading ? (
                         <ActivityIndicator />
@@ -125,15 +135,26 @@ export default function CreatePost() {
 
             {/* Content */}
             <View className="items-center mt-4 px-4">
-                {image ? (
+                {media ? (
                     <View className="mb-4 w-full items-center">
-                        <Image
-                            source={{ uri: image }}
-                            style={{ width: '100%', aspectRatio: 9 / 16, borderRadius: 12, backgroundColor: '#f3f4f6' }}
-                            contentFit="cover"
-                        />
+                        {mediaType === 'video' ? (
+                            <Video
+                                source={{ uri: media }}
+                                style={{ width: '100%', aspectRatio: 9 / 16, borderRadius: 12, backgroundColor: '#f3f4f6' }}
+                                resizeMode={ResizeMode.COVER}
+                                useNativeControls
+                                isLooping
+                                shouldPlay={false} // Don't auto play in preview
+                            />
+                        ) : (
+                            <Image
+                                source={{ uri: media }}
+                                style={{ width: '100%', aspectRatio: 9 / 16, borderRadius: 12, backgroundColor: '#f3f4f6' }}
+                                contentFit="cover"
+                            />
+                        )}
                         <View className="flex-row mt-4 space-x-4">
-                            <TouchableOpacity onPress={() => setImage(null)} className="bg-gray-100 px-4 py-2 rounded-full">
+                            <TouchableOpacity onPress={() => setMedia(null)} className="bg-gray-100 px-4 py-2 rounded-full">
                                 <Text className="font-semibold text-gray-700">Retake</Text>
                             </TouchableOpacity>
                         </View>
@@ -145,12 +166,12 @@ export default function CreatePost() {
                     >
                         <View className="items-center">
                             <Text className="text-4xl mb-2">📸</Text>
-                            <Text className="text-gray-500 font-semibold">Take a Photo</Text>
+                            <Text className="text-gray-500 font-semibold">Take Photo / Video</Text>
                         </View>
                     </TouchableOpacity>
                 )}
 
-                {!image && (
+                {!media && (
                     <TouchableOpacity onPress={() => pickImage(false)} className="mb-8">
                         <Text className="text-blue-500 font-semibold">Choose from Library</Text>
                     </TouchableOpacity>

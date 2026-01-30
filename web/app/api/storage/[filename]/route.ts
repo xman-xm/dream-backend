@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/auth-unified"
-import { readFile } from "fs/promises"
+import { createReadStream, statSync, existsSync } from "fs" // synchronous stat is fine for this checking
 import { join } from "path"
-import { existsSync } from "fs" // Correct import for existsSync
+import { Readable } from 'stream'
 
 export async function GET(
     request: Request,
-    { params }: { params: Promise<{ filename: string }> } // Params must be awaited in recent Next.js versions
+    props: { params: Promise<{ filename: string }> }
 ) {
     const user = await getCurrentUser(request)
 
@@ -14,9 +14,8 @@ export async function GET(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { filename } = await params
+    const { filename } = await props.params
 
-    // Basic sanitization
     const safeFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '')
     const storageDir = join(process.cwd(), 'storage')
     const filepath = join(storageDir, safeFilename)
@@ -26,24 +25,57 @@ export async function GET(
     }
 
     try {
-        const fileBuffer = await readFile(filepath)
+        const stat = statSync(filepath)
+        const fileSize = stat.size
+        const range = request.headers.get('range')
 
-        // Determine content type (basic)
         let contentType = 'application/octet-stream'
         if (filename.endsWith('.png')) contentType = 'image/png'
         else if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) contentType = 'image/jpeg'
         else if (filename.endsWith('.gif')) contentType = 'image/gif'
         else if (filename.endsWith('.mp4')) contentType = 'video/mp4'
 
-        return new NextResponse(fileBuffer, {
-            headers: {
-                'Content-Type': contentType,
-                'Cache-Control': 'private, max-age=3600',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, OPTIONS',
-                'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-            }
-        })
+        if (range) {
+            const parts = range.replace(/bytes=/, "").split("-")
+            const start = parseInt(parts[0], 10)
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
+            const chunksize = (end - start) + 1
+            const fileStream = createReadStream(filepath, { start, end })
+
+            // Convert node stream to web stream for NextResponse
+            // @ts-ignore
+            const stream = Readable.toWeb(fileStream)
+
+            return new NextResponse(stream as any, {
+                status: 206,
+                headers: {
+                    'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                    'Accept-Ranges': 'bytes',
+                    'Content-Length': chunksize.toString(),
+                    'Content-Type': contentType,
+                    'Cache-Control': 'private, max-age=3600',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range',
+                }
+            })
+        } else {
+            const fileStream = createReadStream(filepath)
+            // @ts-ignore
+            const stream = Readable.toWeb(fileStream)
+
+            return new NextResponse(stream as any, {
+                status: 200,
+                headers: {
+                    'Content-Length': fileSize.toString(),
+                    'Content-Type': contentType,
+                    'Cache-Control': 'private, max-age=3600',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range',
+                }
+            })
+        }
     } catch (error) {
         console.error("Error serving file:", error)
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })

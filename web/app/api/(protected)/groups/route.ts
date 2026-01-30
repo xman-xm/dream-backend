@@ -18,6 +18,7 @@ export async function POST(request: Request) {
         const formData = await request.formData()
         const name = formData.get('name') as string
         const description = formData.get('description') as string | null
+        const isPrivate = formData.get('isPrivate') === 'true'
         const file = formData.get('avatar') as File | null
 
         if (!name) {
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
             data: {
                 name,
                 description: description || '',
+                isPrivate,
                 avatarUrl,
                 creatorId: user.id,
                 members: {
