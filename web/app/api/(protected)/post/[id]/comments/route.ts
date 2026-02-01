@@ -69,6 +69,12 @@ export async function POST(
             }
         })
 
+        // Implicit Learning (Background)
+        // Weight 0.10 for a Comment
+        import("@/lib/learning").then(mod => {
+            mod.updateUserInterest(user.id, id, 0.10);
+        });
+
         return NextResponse.json(comment)
     } catch (error) {
         console.error('Error creating comment:', error)

@@ -30,6 +30,7 @@ model User {
   posts                  Post[]
   sessions               Session[]
   embedding              Unsupported("vector(768)")?
+  interestEmbedding      Unsupported("vector(768)")?
 }
 
 model Account {

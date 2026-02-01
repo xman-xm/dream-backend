@@ -23,16 +23,17 @@ dayjs.updateLocale('en', {
   }
 });
 
-import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, FlatList, RefreshControl, TouchableOpacity, Alert } from "react-native";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { View, Text, FlatList, RefreshControl, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 
 import { apiFetch, API_URL } from "../../../lib/api";
 import { getToken } from "../../../lib/auth-store";
 import { Image } from "expo-image";
-import { FriendSuggestions } from "../../../components/FriendSuggestions";
+import { SuggestedUsers } from "../../../components/SuggestedUsers";
 import { CommentsModal } from "../../../components/CommentsModal";
-
+import { useAuth } from "../../../context/AuthContext";
+import { PostItem } from "../../../components/PostItem";
 
 type Author = {
   id: string;
@@ -53,11 +54,9 @@ type Post = {
     comments: number;
   };
   likes?: { id: string }[];
+  // Special type for injection
+  specialType?: 'SUGGESTIONS';
 };
-
-import { useAuth } from "../../../context/AuthContext";
-
-import { PostItem } from "../../../components/PostItem";
 
 export default function Page() {
   const router = useRouter();
@@ -65,32 +64,71 @@ export default function Page() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Pagination State
+  const [cursor, setCursor] = useState<number | null>(0);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
   const [commentModalVisible, setCommentModalVisible] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
-  const fetchPosts = useCallback(async () => {
+  const loadPosts = useCallback(async (startCursor: number | null = 0, isRefresh = false) => {
+    if (startCursor === null) return;
+
     try {
-      const response = await apiFetch('/post');
+      const response = await apiFetch(`/post?cursor=${startCursor}`);
       if (response.ok) {
         const data = await response.json();
-        setPosts(data);
+        const newPosts: Post[] = data.posts || [];
+        const nextCursor = data.nextCursor; // Might be null
+
+        setPosts(prev => {
+          let updated = isRefresh ? newPosts : [...prev, ...newPosts];
+
+          // Inject Suggestions if we have enough posts and haven't injected yet
+          // Only injecting once for now at index 5
+          const hasInjection = updated.some(p => p.specialType === 'SUGGESTIONS');
+          if (!hasInjection && updated.length >= 5) {
+            const head = updated.slice(0, 5);
+            const tail = updated.slice(5);
+            updated = [...head, { id: 'suggestions-injection', specialType: 'SUGGESTIONS' } as any, ...tail];
+          }
+
+          return updated;
+        });
+
+        setCursor(nextCursor);
+        setHasMore(nextCursor !== null);
       }
     } catch (error) {
       console.error('Error fetching posts:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setIsFetchingMore(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchPosts();
-  }, [fetchPosts]);
+    loadPosts(0, true);
+  }, [loadPosts]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchPosts();
-  }, [fetchPosts]);
+    setHasMore(true);
+    setCursor(0);
+    // Force reset posts
+    // setPosts([]); // Optional: clear list or keep while loading
+    loadPosts(0, true);
+  }, [loadPosts]);
+
+  const onEndReached = () => {
+    if (!isFetchingMore && hasMore && cursor !== null && !loading) {
+      setIsFetchingMore(true);
+      loadPosts(cursor);
+    }
+  };
 
   const handleLike = async (postId: string) => {
     try {
@@ -184,26 +222,44 @@ export default function Page() {
   const renderHeader = () => (
     <View>
       <View className="bg-white px-6 py-4 border-b border-gray-200 mb-2">
-        <Text className="text-2xl font-bold text-gray-900 text-blue-600">Social App</Text>
+        <Text className="text-2xl font-bold text-gray-900 text-blue-600">Home</Text>
       </View>
-      <FriendSuggestions />
     </View>
   );
 
-  const renderItem = ({ item }: { item: Post }) => (
-    <PostItem
-      post={item as any}
-      token={token}
-      currentUserId={user?.id}
-      onLike={handleLike}
-      onComment={(id) => {
-        setSelectedPostId(id);
-        setCommentModalVisible(true);
-      }}
-      onUserPress={(userId) => router.push(`/(protected)/user/${userId}`)}
-      onOptionPress={handlePostOptions}
-    />
-  );
+  const renderItem = ({ item }: { item: Post }) => {
+    if (item.specialType === 'SUGGESTIONS') {
+      return (
+        <View className="my-2 py-2 bg-gray-50 border-t border-b border-gray-100">
+          <SuggestedUsers />
+        </View>
+      );
+    }
+
+    return (
+      <PostItem
+        post={item as any}
+        token={token}
+        currentUserId={user?.id}
+        onLike={handleLike}
+        onComment={(id) => {
+          setSelectedPostId(id);
+          setCommentModalVisible(true);
+        }}
+        onUserPress={(userId) => router.push(`/(protected)/user/${userId}`)}
+        onOptionPress={handlePostOptions}
+      />
+    );
+  };
+
+  const renderFooter = () => {
+    if (!isFetchingMore) return null;
+    return (
+      <View className="py-4">
+        <ActivityIndicator color="#2563EB" />
+      </View>
+    );
+  };
 
   return (
     <View className="flex-1 bg-gray-50">
@@ -212,9 +268,12 @@ export default function Page() {
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={renderHeader}
+        ListFooterComponent={renderFooter}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.5}
         contentContainerStyle={{ paddingBottom: 20 }}
         ListEmptyComponent={
           !loading ? (
@@ -230,7 +289,7 @@ export default function Page() {
         visible={commentModalVisible}
         onClose={() => setCommentModalVisible(false)}
         postId={selectedPostId || ''}
-        onCommentAdded={fetchPosts}
+        onCommentAdded={() => onRefresh()}
       />
     </View>
   );

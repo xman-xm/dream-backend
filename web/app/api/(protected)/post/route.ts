@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { Prisma } from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth-unified"
 import { writeFile } from "fs/promises"
 import { join } from "path"
@@ -13,86 +14,223 @@ export async function GET(request: Request) {
     }
 
     try {
-        // Check if userId query parameter is provided
         const { searchParams } = new URL(request.url)
         const userIdFilter = searchParams.get('userId')
+        const limit = 5
+        const cursorScore = parseFloat(searchParams.get('cursor') || '999999')
 
-        let whereCondition: any = {}
-
-        // If userId is provided, fetch posts for that specific user
+        // 1. Profile Mode (Chronological)
         if (userIdFilter) {
-            whereCondition = {
-                authorId: userIdFilter
-            }
-        } else {
-            // Otherwise, use the friends feed algorithm
-            // 1. Get User's Friend IDs
-            const memberships = await prisma.friendship.findMany({
-                where: {
-                    status: 'ACCEPTED',
-                    OR: [
-                        { requesterId: user.id },
-                        { addresseeId: user.id }
-                    ]
+            const posts = await prisma.post.findMany({
+                where: { authorId: userIdFilter },
+                orderBy: { createdAt: 'desc' },
+                include: {
+                    author: true,
+                    likes: { where: { userId: user.id } },
+                    _count: { select: { likes: true, comments: true } }
                 },
-                select: {
-                    requesterId: true,
-                    addresseeId: true
-                }
+                take: 20 // Standard limit for profile
             })
 
-            const friendIds = new Set<string>()
-            memberships.forEach(f => {
-                friendIds.add(f.requesterId === user.id ? f.addresseeId : f.requesterId)
-            })
-
-            // 2. Feed Algorithm
-            if (friendIds.size > 0) {
-                // "Friends Feed": Show ONLY my friends' posts (User requested to exclude self)
-                whereCondition = {
-                    authorId: {
-                        in: Array.from(friendIds)
-                    }
-                }
-            } else {
-                // "Global Cold Start": User has no friends, show everything EXCEPT my own posts
-                whereCondition = {
-                    authorId: {
-                        not: user.id
-                    }
-                }
-            }
+            const enhancedPosts = posts.map(post => ({
+                ...post,
+                isLiked: post.likes.length > 0
+            }))
+            return NextResponse.json(enhancedPosts)
         }
 
-        const posts = await prisma.post.findMany({
-            where: whereCondition,
-            orderBy: {
-                createdAt: 'desc'
-            },
-            include: {
-                author: true,
-                likes: {
-                    where: { userId: user.id } // optimal way to see if I liked it
-                },
-                _count: {
-                    select: {
-                        likes: true,
-                        comments: true
-                    }
-                }
-            },
-            take: 50
-        })
+        // 2. Smart Feed Mode
+        // Get User's Interest Vector (or default to empty if brand new)
+        const userResult = await prisma.$queryRaw`
+            SELECT "interestEmbedding" FROM "User" WHERE id = ${user.id}
+        ` as any[]
+        const userRecord = userResult[0] || null
 
-        // Enhance post object with 'isLiked'
-        const enhancedPosts = posts.map(post => ({
-            ...post,
-            isLiked: post.likes.length > 0
+        // If no vector, we use a zero vector (neutral) or just rely on reactions
+        // For Postgres pgvector, we can't query 'null' distance easily if column is null.
+        // But our strategy: if null, we rely 100% on popularity.
+
+        // Raw SQL for the Algorithm
+        // Note: <=> is distance (0=same, 2=opposite). 
+        // Similarity = 1 - (<=>).
+
+        // We cast count to float to avoid division issues.
+        // We use LOG10 for reaction scaling so 1M likes doesn't break math vs 10 likes.
+
+        const hasInterest = !!(userRecord as any)?.interestEmbedding
+
+        const rawPosts = await prisma.$queryRaw`
+            SELECT 
+                p.id, 
+                p."createdAt", 
+                p.caption, 
+                p.media, 
+                p.type,
+                p."authorId", 
+                u.name as author_name, 
+                u.username as "author_username", 
+                u."avatarUrl" as "author_avatarUrl",
+                COUNT(l.id) as like_count,
+                COUNT(c.id) as comment_count,
+                MAX(CASE WHEN l."userId" = ${user.id} THEN 1 ELSE 0 END) as is_liked,
+                
+                -- Scoring Components
+                -- 1. Similarity (0 to 1). If no interest vector, default to 0.5 (neutral)
+                ${hasInterest
+                // @ts-ignore
+                ? Prisma.sql`(1 - (p.embedding <=> ${userRecord.interestEmbedding}))`
+                : Prisma.sql`0.5`} as similarity_score,
+
+                -- 2. Social Multiplier (1.75x for Friends, 1.1x Global)
+                CASE 
+                    WHEN EXISTS (
+                        SELECT 1 FROM "Friendship" f 
+                        WHERE (f."requesterId" = ${user.id} AND f."addresseeId" = p."authorId" AND f.status = 'ACCEPTED')
+                        OR (f."addresseeId" = ${user.id} AND f."requesterId" = p."authorId" AND f.status = 'ACCEPTED')
+                    ) THEN 1.75
+                    ELSE 1.1
+                END as social_multiplier
+            
+            FROM "Post" p
+            JOIN "User" u ON p."authorId" = u.id
+            LEFT JOIN "Like" l ON p.id = l."postId"
+            LEFT JOIN "Comment" c ON p.id = c."postId"
+            
+            GROUP BY p.id, u.id
+            
+            -- Calculate Final Score
+            -- Score = ( (Sim * 0.7) + (NormalizedReactions * 0.3) ) * Multiplier
+            -- NormalizedReactions: Log10 of (likes + comments + 1) / 5 (Max sensible ~100k => 5)
+            ORDER BY 
+                (
+                    (
+                        (${hasInterest ? Prisma.sql`(1 - (p.embedding <=> ${(userRecord as any).interestEmbedding}))` : Prisma.sql`0.5`} * 0.7) 
+                        + 
+                        ((LEAST(LOG(COUNT(l.id) + COUNT(c.id) + 1), 5) / 5) * 0.3)
+                    ) 
+                    * 
+                    CASE 
+                        WHEN EXISTS (
+                            SELECT 1 FROM "Friendship" f 
+                            WHERE (f."requesterId" = ${user.id} AND f."addresseeId" = p."authorId" AND f.status = 'ACCEPTED')
+                            OR (f."addresseeId" = ${user.id} AND f."requesterId" = p."authorId" AND f.status = 'ACCEPTED')
+                        ) THEN 1.75
+                        ELSE 1.1
+                    END
+                ) DESC
+            
+            LIMIT ${limit}
+        ` as any[]
+
+        // Format for Frontend
+        // We'll need to manually construct the JSON structure since raw query is flat
+        const formattedPosts = rawPosts.map((row: any) => ({
+            id: row.id,
+            createdAt: row.createdAt,
+            caption: row.caption,
+            media: row.media,
+            type: row.type,
+            authorId: row.authorId,
+            author: {
+                id: row.authorId,
+                name: row.author_name,
+                username: row.author_username,
+                avatarUrl: row.author_avatarUrl
+            },
+            isLiked: Number(row.is_liked) === 1,
+            _count: {
+                likes: Number(row.like_count),
+                comments: Number(row.comment_count)
+            },
+            // Debug info (optional, remove in prod)
+            debugScore: row.similarity_score
         }))
 
-        return NextResponse.json(enhancedPosts)
+        // Cursor logic (for next batch) - we use an OFFSET approach or score-based?
+        // Score-based is hard because score changes dynamically.
+        // For MVP, typically "Offset" is safer unless we persist the feed.
+        // Wait, infinite scroll with dynamic scores is tricky. 
+        // Best approach for MVP: Use OFFSET based on page number passed via cursor?
+        // Let's assume cursor is just "page number" for now since complex score-cursor is hard.
+        // UPDATE: The user asked for "cursor" based on scrolling.
+        // Let's implement OFFSET pagination for now: cursor = offset.
+
+        // Actually, let's fix the SQL to use OFFSET.
+        // We need to re-run the query with OFFSET.
+        const offset = parseInt(searchParams.get('cursor') || '0');
+
+        // (Re-writing the query execution to include OFFSET)
+        const paginatedPosts = await prisma.$queryRaw`
+            SELECT 
+                p.id, 
+                p."createdAt", 
+                p.caption, 
+                p.media, 
+                p.type,
+                p."authorId", 
+                u.name as author_name, 
+                u.username as "author_username", 
+                u."avatarUrl" as "author_avatarUrl",
+                COUNT(l.id) as like_count,
+                COUNT(c.id) as comment_count,
+                MAX(CASE WHEN l."userId" = ${user.id} THEN 1 ELSE 0 END) as is_liked,
+                ${hasInterest
+
+                ? Prisma.sql`(1 - (p.embedding <=> ${(userRecord as any).interestEmbedding}))`
+                : Prisma.sql`0.5`} as similarity_score
+            FROM "Post" p
+            JOIN "User" u ON p."authorId" = u.id
+            LEFT JOIN "Like" l ON p.id = l."postId"
+            LEFT JOIN "Comment" c ON p.id = c."postId"
+            WHERE p."authorId" != ${user.id}
+            GROUP BY p.id, u.id
+            ORDER BY 
+                (
+                    (
+                        (${hasInterest ? Prisma.sql`(1 - (p.embedding <=> ${(userRecord as any).interestEmbedding}))` : Prisma.sql`0.5`} * 0.7) 
+                        + 
+                        ((LEAST(LOG(COUNT(l.id) + COUNT(c.id) + 1), 5) / 5) * 0.3)
+                    ) 
+                    * 
+                    CASE 
+                        WHEN EXISTS (
+                            SELECT 1 FROM "Friendship" f 
+                            WHERE (f."requesterId" = ${user.id} AND f."addresseeId" = p."authorId" AND f.status = 'ACCEPTED')
+                            OR (f."addresseeId" = ${user.id} AND f."requesterId" = p."authorId" AND f.status = 'ACCEPTED')
+                        ) THEN 1.75
+                        ELSE 1.1
+                    END
+                ) DESC
+            LIMIT ${limit} OFFSET ${offset}
+        ` as any[]
+
+        const finalizedPosts = paginatedPosts.map((row: any) => ({
+            id: row.id,
+            createdAt: row.createdAt,
+            caption: row.caption,
+            media: row.media,
+            type: row.type,
+            authorId: row.authorId,
+            author: {
+                id: row.authorId,
+                name: row.author_name,
+                username: row.author_username,
+                avatarUrl: row.author_avatarUrl
+            },
+            isLiked: Number(row.is_liked) === 1,
+            _count: {
+                likes: Number(row.like_count),
+                comments: Number(row.comment_count)
+            }
+        }))
+
+        return NextResponse.json({
+            posts: finalizedPosts,
+            nextCursor: finalizedPosts.length === limit ? offset + limit : null
+        })
+
     } catch (error) {
-        console.error("Feed error:", error)
+        console.error("Smart Feed error:", error)
         return NextResponse.json({ error: 'Error fetching feed' }, { status: 500 })
     }
 }

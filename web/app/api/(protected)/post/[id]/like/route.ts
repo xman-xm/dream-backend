@@ -40,6 +40,13 @@ export async function POST(
                     userId: user.id
                 }
             })
+
+            // Implicit Learning (Background)
+            // Weight 0.05 for a Like
+            import("@/lib/learning").then(mod => {
+                mod.updateUserInterest(user.id, id, 0.05);
+            });
+
             return NextResponse.json({ liked: true })
         }
     } catch (error) {
