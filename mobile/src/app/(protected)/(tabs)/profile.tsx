@@ -55,7 +55,11 @@ type Post = {
     likes?: { id: string }[];
 };
 
+import { OfflineWrapper } from "../../../components/OfflineWrapper";
+import { useAutoRetry } from "../../../hooks/useAutoRetry";
 import { PostItem } from "../../../components/PostItem";
+
+// ... previous imports
 
 export default function Profile() {
     const router = useRouter();
@@ -72,7 +76,9 @@ export default function Profile() {
             const res = await apiFetch(`/post?userId=${user.id}`);
             if (res.ok) {
                 const data = await res.json();
-                setPosts(Array.isArray(data) ? data : []);
+                // Handle both new { posts: [], nextCursor } and old [] formats
+                const postsData = data.posts || (Array.isArray(data) ? data : []);
+                setPosts(postsData);
             }
         } catch (e) {
             console.error(e);
@@ -87,6 +93,14 @@ export default function Profile() {
             fetchUserPosts();
         }
     }, [user?.id]);
+
+    useAutoRetry(() => {
+        if (user?.id) {
+            console.log('Auto-retrying profile...');
+            fetchUserPosts();
+            refreshUserProfile();
+        }
+    });
 
     const onRefresh = async () => {
         setRefreshing(true);
@@ -275,31 +289,33 @@ export default function Profile() {
 
     return (
         <View className="flex-1 bg-gray-50">
-            <FlatList
-                data={posts}
-                renderItem={renderItem}
-                keyExtractor={(item) => item.id}
-                ListHeaderComponent={renderHeader}
-                refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-                }
-                contentContainerStyle={{ paddingBottom: 20 }}
-                ListEmptyComponent={
-                    !loading ? (
-                        <View className="p-8 items-center bg-white">
-                            <Text className="text-gray-500 text-center">No posts yet.</Text>
-                            <Text className="text-gray-400 text-center text-sm mt-2">Create your first post!</Text>
-                        </View>
-                    ) : null
-                }
-            />
+            <OfflineWrapper onRetry={onRefresh}>
+                <FlatList
+                    data={posts}
+                    renderItem={renderItem}
+                    keyExtractor={(item) => item.id}
+                    ListHeaderComponent={renderHeader}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                    }
+                    contentContainerStyle={{ paddingBottom: 20 }}
+                    ListEmptyComponent={
+                        !loading ? (
+                            <View className="p-8 items-center bg-white">
+                                <Text className="text-gray-500 text-center">No posts yet.</Text>
+                                <Text className="text-gray-400 text-center text-sm mt-2">Create your first post!</Text>
+                            </View>
+                        ) : null
+                    }
+                />
 
-            <CommentsModal
-                visible={commentModalVisible}
-                onClose={() => setCommentModalVisible(false)}
-                postId={selectedPostId || ''}
-                onCommentAdded={fetchUserPosts}
-            />
+                <CommentsModal
+                    visible={commentModalVisible}
+                    onClose={() => setCommentModalVisible(false)}
+                    postId={selectedPostId || ''}
+                    onCommentAdded={fetchUserPosts}
+                />
+            </OfflineWrapper>
         </View>
     );
 }

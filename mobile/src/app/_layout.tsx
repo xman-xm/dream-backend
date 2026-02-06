@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 import { usePushNotifications } from "../hooks/usePushNotifications";
+import { NetworkProvider } from "../context/NetworkContext";
 
 function RootLayoutNav() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -45,7 +46,9 @@ function RootLayoutNav() {
 export default function Layout() {
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <NetworkProvider>
+        <RootLayoutNav />
+      </NetworkProvider>
     </AuthProvider>
   );
 }

@@ -16,115 +16,125 @@ export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url)
         const userIdFilter = searchParams.get('userId')
-        const limit = 5
-        const cursorScore = parseFloat(searchParams.get('cursor') || '999999')
 
         // 1. Profile Mode (Chronological)
         if (userIdFilter) {
+            const cursor = parseInt(searchParams.get('cursor') || '0');
+            const limit = 20;
+
             const posts = await prisma.post.findMany({
                 where: { authorId: userIdFilter },
                 orderBy: { createdAt: 'desc' },
                 include: {
                     author: true,
                     likes: { where: { userId: user.id } },
+                    comments: { where: { authorId: user.id } },
                     _count: { select: { likes: true, comments: true } }
                 },
-                take: 20 // Standard limit for profile
+                take: limit,
+                skip: cursor
             })
 
             const enhancedPosts = posts.map(post => ({
                 ...post,
-                isLiked: post.likes.length > 0
+                isLiked: (post as any).likes.length > 0,
+                isCommented: (post as any).comments.length > 0
             }))
-            return NextResponse.json(enhancedPosts)
+
+            return NextResponse.json({
+                posts: enhancedPosts,
+                nextCursor: posts.length === limit ? cursor + limit : null
+            })
         }
 
-        // 2. Smart Feed Mode
-        // Get User's Interest Vector (or default to empty if brand new)
+        // 2. Smart Feed Mode with Video Promotion
+
+        // Parse Cursor: Expects JSON string { i: number, v: number } or fallback to simple offset (0)
+        let cursor = { i: 0, v: 0 };
+        const cursorParam = searchParams.get('cursor');
+        if (cursorParam) {
+            try {
+                if (cursorParam.startsWith('{')) {
+                    // New format
+                    cursor = JSON.parse(cursorParam);
+                } else {
+                    // Legacy or simple number fallback
+                    const val = parseInt(cursorParam);
+                    if (!isNaN(val)) {
+                        cursor = { i: val, v: val };
+                    }
+                }
+            } catch (e) {
+                console.warn("Invalid cursor format, resetting", cursorParam);
+            }
+        }
+
+        // Get User's Interest Vector
         const userResult = await prisma.$queryRaw`
             SELECT "interestEmbedding" FROM "User" WHERE id = ${user.id}
         ` as any[]
         const userRecord = userResult[0] || null
-
-        // If no vector, we use a zero vector (neutral) or just rely on reactions
-        // For Postgres pgvector, we can't query 'null' distance easily if column is null.
-        // But our strategy: if null, we rely 100% on popularity.
-
-        // Raw SQL for the Algorithm
-        // Note: <=> is distance (0=same, 2=opposite). 
-        // Similarity = 1 - (<=>).
-
-        // We cast count to float to avoid division issues.
-        // We use LOG10 for reaction scaling so 1M likes doesn't break math vs 10 likes.
-
         const hasInterest = !!(userRecord as any)?.interestEmbedding
 
-        const rawPosts = await prisma.$queryRaw`
-            SELECT 
-                p.id, 
-                p."createdAt", 
-                p.caption, 
-                p.media, 
-                p.type,
-                p."authorId", 
-                u.name as author_name, 
-                u.username as "author_username", 
-                u."avatarUrl" as "author_avatarUrl",
-                COUNT(l.id) as like_count,
-                COUNT(c.id) as comment_count,
-                MAX(CASE WHEN l."userId" = ${user.id} THEN 1 ELSE 0 END) as is_liked,
-                
-                -- Scoring Components
-                -- 1. Similarity (0 to 1). If no interest vector, default to 0.5 (neutral)
-                ${hasInterest
-                // @ts-ignore
-                ? Prisma.sql`(1 - (p.embedding <=> ${userRecord.interestEmbedding}))`
-                : Prisma.sql`0.5`} as similarity_score,
-
-                -- 2. Social Multiplier (1.75x for Friends, 1.1x Global)
-                CASE 
-                    WHEN EXISTS (
-                        SELECT 1 FROM "Friendship" f 
-                        WHERE (f."requesterId" = ${user.id} AND f."addresseeId" = p."authorId" AND f.status = 'ACCEPTED')
-                        OR (f."addresseeId" = ${user.id} AND f."requesterId" = p."authorId" AND f.status = 'ACCEPTED')
-                    ) THEN 1.75
-                    ELSE 1.1
-                END as social_multiplier
-            
-            FROM "Post" p
-            JOIN "User" u ON p."authorId" = u.id
-            LEFT JOIN "Like" l ON p.id = l."postId"
-            LEFT JOIN "Comment" c ON p.id = c."postId"
-            
-            GROUP BY p.id, u.id
-            
-            -- Calculate Final Score
-            -- Score = ( (Sim * 0.7) + (NormalizedReactions * 0.3) ) * Multiplier
-            -- NormalizedReactions: Log10 of (likes + comments + 1) / 5 (Max sensible ~100k => 5)
-            ORDER BY 
-                (
+        // Helper to fetch posts by type
+        const fetchPostsByType = async (type: 'IMAGE' | 'VIDEO', offset: number, limit: number) => {
+            return await prisma.$queryRaw`
+                SELECT 
+                    p.id, 
+                    p."createdAt", 
+                    p.caption, 
+                    p.media, 
+                    p.type,
+                    p."authorId", 
+                    u.name as author_name, 
+                    u.username as "author_username", 
+                    u."avatarUrl" as "author_avatarUrl",
+                    COUNT(l.id) as like_count,
+                    COUNT(c.id) as comment_count,
+                    MAX(CASE WHEN l."userId" = ${user.id} THEN 1 ELSE 0 END) as is_liked,
+                    MAX(CASE WHEN c."authorId" = ${user.id} THEN 1 ELSE 0 END) as is_commented,
+                    ${hasInterest
+                    ? Prisma.sql`(1 - (p.embedding <=> ${(userRecord as any).interestEmbedding}))`
+                    : Prisma.sql`0.5`} as similarity_score
+                FROM "Post" p
+                JOIN "User" u ON p."authorId" = u.id
+                LEFT JOIN "Like" l ON p.id = l."postId"
+                LEFT JOIN "Comment" c ON p.id = c."postId"
+                WHERE p."authorId" != ${user.id}
+                AND p.type = ${type}
+                GROUP BY p.id, u.id
+                ORDER BY 
                     (
-                        (${hasInterest ? Prisma.sql`(1 - (p.embedding <=> ${(userRecord as any).interestEmbedding}))` : Prisma.sql`0.5`} * 0.7) 
-                        + 
-                        ((LEAST(LOG(COUNT(l.id) + COUNT(c.id) + 1), 5) / 5) * 0.3)
-                    ) 
-                    * 
-                    CASE 
-                        WHEN EXISTS (
-                            SELECT 1 FROM "Friendship" f 
-                            WHERE (f."requesterId" = ${user.id} AND f."addresseeId" = p."authorId" AND f.status = 'ACCEPTED')
-                            OR (f."addresseeId" = ${user.id} AND f."requesterId" = p."authorId" AND f.status = 'ACCEPTED')
-                        ) THEN 1.75
-                        ELSE 1.1
-                    END
-                ) DESC
-            
-            LIMIT ${limit}
-        ` as any[]
+                        (
+                            (${hasInterest ? Prisma.sql`(1 - (p.embedding <=> ${(userRecord as any).interestEmbedding}))` : Prisma.sql`0.5`} * 0.7) 
+                            + 
+                            ((LEAST(LOG(COUNT(l.id) + COUNT(c.id) + 1), 5) / 5) * 0.3)
+                        ) 
+                        * 
+                        CASE 
+                            WHEN EXISTS (
+                                SELECT 1 FROM "Friendship" f 
+                                WHERE (f."requesterId" = ${user.id} AND f."addresseeId" = p."authorId" AND f.status = 'ACCEPTED')
+                                OR (f."addresseeId" = ${user.id} AND f."requesterId" = p."authorId" AND f.status = 'ACCEPTED')
+                            ) THEN 1.75
+                            ELSE 1.1
+                        END
+                    ) DESC
+                LIMIT ${limit} OFFSET ${offset}
+            ` as any[];
+        };
 
-        // Format for Frontend
-        // We'll need to manually construct the JSON structure since raw query is flat
-        const formattedPosts = rawPosts.map((row: any) => ({
+        // We fetch enough items to fill the slots.
+        // Pattern: Img, Img, Any, Vid, Vid (Total 5)
+        // Img needs max 3 (if "Any" is best filled by Img)
+        // Vid needs max 3 (if "Any" is best filled by Vid)
+        // We fetch 4 just to be safe.
+        const [imagePostsRaw, videoPostsRaw] = await Promise.all([
+            fetchPostsByType('IMAGE', cursor.i, 4),
+            fetchPostsByType('VIDEO', cursor.v, 4)
+        ]);
+
+        const formatPost = (row: any) => ({
             id: row.id,
             createdAt: row.createdAt,
             caption: row.caption,
@@ -138,95 +148,68 @@ export async function GET(request: Request) {
                 avatarUrl: row.author_avatarUrl
             },
             isLiked: Number(row.is_liked) === 1,
+            isCommented: Number(row.is_commented) === 1,
             _count: {
                 likes: Number(row.like_count),
                 comments: Number(row.comment_count)
             },
-            // Debug info (optional, remove in prod)
             debugScore: row.similarity_score
-        }))
+        });
 
-        // Cursor logic (for next batch) - we use an OFFSET approach or score-based?
-        // Score-based is hard because score changes dynamically.
-        // For MVP, typically "Offset" is safer unless we persist the feed.
-        // Wait, infinite scroll with dynamic scores is tricky. 
-        // Best approach for MVP: Use OFFSET based on page number passed via cursor?
-        // Let's assume cursor is just "page number" for now since complex score-cursor is hard.
-        // UPDATE: The user asked for "cursor" based on scrolling.
-        // Let's implement OFFSET pagination for now: cursor = offset.
+        const imagePosts = imagePostsRaw.map(formatPost);
+        const videoPosts = videoPostsRaw.map(formatPost);
 
-        // Actually, let's fix the SQL to use OFFSET.
-        // We need to re-run the query with OFFSET.
-        const offset = parseInt(searchParams.get('cursor') || '0');
+        const resultPosts: any[] = [];
+        let iPtr = 0;
+        let vPtr = 0;
 
-        // (Re-writing the query execution to include OFFSET)
-        const paginatedPosts = await prisma.$queryRaw`
-            SELECT 
-                p.id, 
-                p."createdAt", 
-                p.caption, 
-                p.media, 
-                p.type,
-                p."authorId", 
-                u.name as author_name, 
-                u.username as "author_username", 
-                u."avatarUrl" as "author_avatarUrl",
-                COUNT(l.id) as like_count,
-                COUNT(c.id) as comment_count,
-                MAX(CASE WHEN l."userId" = ${user.id} THEN 1 ELSE 0 END) as is_liked,
-                ${hasInterest
+        // Slot 1: Image
+        if (iPtr < imagePosts.length) resultPosts.push(imagePosts[iPtr++]);
 
-                ? Prisma.sql`(1 - (p.embedding <=> ${(userRecord as any).interestEmbedding}))`
-                : Prisma.sql`0.5`} as similarity_score
-            FROM "Post" p
-            JOIN "User" u ON p."authorId" = u.id
-            LEFT JOIN "Like" l ON p.id = l."postId"
-            LEFT JOIN "Comment" c ON p.id = c."postId"
-            WHERE p."authorId" != ${user.id}
-            GROUP BY p.id, u.id
-            ORDER BY 
-                (
-                    (
-                        (${hasInterest ? Prisma.sql`(1 - (p.embedding <=> ${(userRecord as any).interestEmbedding}))` : Prisma.sql`0.5`} * 0.7) 
-                        + 
-                        ((LEAST(LOG(COUNT(l.id) + COUNT(c.id) + 1), 5) / 5) * 0.3)
-                    ) 
-                    * 
-                    CASE 
-                        WHEN EXISTS (
-                            SELECT 1 FROM "Friendship" f 
-                            WHERE (f."requesterId" = ${user.id} AND f."addresseeId" = p."authorId" AND f.status = 'ACCEPTED')
-                            OR (f."addresseeId" = ${user.id} AND f."requesterId" = p."authorId" AND f.status = 'ACCEPTED')
-                        ) THEN 1.75
-                        ELSE 1.1
-                    END
-                ) DESC
-            LIMIT ${limit} OFFSET ${offset}
-        ` as any[]
+        // Slot 2: Image
+        if (iPtr < imagePosts.length) resultPosts.push(imagePosts[iPtr++]);
 
-        const finalizedPosts = paginatedPosts.map((row: any) => ({
-            id: row.id,
-            createdAt: row.createdAt,
-            caption: row.caption,
-            media: row.media,
-            type: row.type,
-            authorId: row.authorId,
-            author: {
-                id: row.authorId,
-                name: row.author_name,
-                username: row.author_username,
-                avatarUrl: row.author_avatarUrl
-            },
-            isLiked: Number(row.is_liked) === 1,
-            _count: {
-                likes: Number(row.like_count),
-                comments: Number(row.comment_count)
+        // Slot 3: Image or Video (Higher Score Wins)
+        if (iPtr < imagePosts.length && vPtr < videoPosts.length) {
+            const imgScore = imagePosts[iPtr].debugScore || 0;
+            const vidScore = videoPosts[vPtr].debugScore || 0;
+            if (imgScore >= vidScore) {
+                resultPosts.push(imagePosts[iPtr++]);
+            } else {
+                resultPosts.push(videoPosts[vPtr++]);
             }
-        }))
+        } else if (iPtr < imagePosts.length) {
+            resultPosts.push(imagePosts[iPtr++]);
+        } else if (vPtr < videoPosts.length) {
+            resultPosts.push(videoPosts[vPtr++]);
+        }
+
+        // Slot 4: Video
+        if (vPtr < videoPosts.length) resultPosts.push(videoPosts[vPtr++]);
+
+        // Slot 5: Video
+        if (vPtr < videoPosts.length) resultPosts.push(videoPosts[vPtr++]);
+
+        // Fallback: If slots not filled (e.g. out of videos), fill with remaining images
+        while (resultPosts.length < 5 && iPtr < imagePosts.length) {
+            resultPosts.push(imagePosts[iPtr++]);
+        }
+        // Or if out of images, fill with videos (less likely given the prompt, but good for robustness)
+        while (resultPosts.length < 5 && vPtr < videoPosts.length) {
+            resultPosts.push(videoPosts[vPtr++]);
+        }
+
+        // Next Cursor
+        const nextCursorObj = {
+            i: cursor.i + iPtr,
+            v: cursor.v + vPtr
+        };
+
+        const nextCursor = resultPosts.length > 0 ? JSON.stringify(nextCursorObj) : null;
 
         return NextResponse.json({
-            posts: finalizedPosts,
-            nextCursor: finalizedPosts.length === limit ? offset + limit : null
+            posts: resultPosts,
+            nextCursor
         })
 
     } catch (error) {

@@ -8,29 +8,29 @@ datasource db {
 }
 
 model User {
-  id                     String                      @id @default(cuid())
-  email                  String                      @unique
-  username               String                      @unique
+  id                     String                       @id @default(cuid())
+  email                  String                       @unique
+  username               String                       @unique
   name                   String?
   avatarUrl              String?
   bio                    String?
-  createdAt              DateTime                    @default(now())
-  updatedAt              DateTime                    @updatedAt
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
   password               String?
   pushToken              String?
   accounts               Account[]
   comments               Comment[]
   conversations          ConversationParticipant[]
-  receivedFriendRequests Friendship[]                @relation("FriendshipAddressee")
-  sentFriendRequests     Friendship[]                @relation("FriendshipRequester")
-  createdGroups          Group[]                     @relation("GroupCreator")
+  receivedFriendRequests Friendship[]                 @relation("FriendshipAddressee")
+  sentFriendRequests     Friendship[]                 @relation("FriendshipRequester")
+  createdGroups          Group[]                      @relation("GroupCreator")
   groupMemberships       GroupMember[]
   likes                  Like[]
   messagesSent           Message[]
   posts                  Post[]
   sessions               Session[]
-  embedding              Unsupported("vector(768)")?
-  interestEmbedding      Unsupported("vector(768)")?
+  embedding              Unsupported("vector(3072)")?
+  interestEmbedding      Unsupported("vector(3072)")?
 }
 
 model Account {
@@ -81,19 +81,19 @@ model Friendship {
 }
 
 model Group {
-  id          String                      @id @default(cuid())
+  id          String                       @id @default(cuid())
   name        String
   description String?
   avatarUrl   String?
   coverUrl    String?
   creatorId   String
-  createdAt   DateTime                    @default(now())
-  updatedAt   DateTime                    @updatedAt
-  creator     User                        @relation("GroupCreator", fields: [creatorId], references: [id])
+  createdAt   DateTime                     @default(now())
+  updatedAt   DateTime                     @updatedAt
+  creator     User                         @relation("GroupCreator", fields: [creatorId], references: [id])
   members     GroupMember[]
   posts       Post[]
-  embedding   Unsupported("vector(768)")?
-  isPrivate   Boolean                     @default(false)
+  embedding   Unsupported("vector(3072)")?
+  isPrivate   Boolean                      @default(false)
 }
 
 model GroupMember {
@@ -110,20 +110,20 @@ model GroupMember {
 }
 
 model Post {
-  id            String                      @id @default(cuid())
+  id            String                       @id @default(cuid())
   caption       String?
   authorId      String
   groupId       String?
-  createdAt     DateTime                    @default(now())
-  updatedAt     DateTime                    @updatedAt
+  createdAt     DateTime                     @default(now())
+  updatedAt     DateTime                     @updatedAt
   media         String
   type          String
-  aiDescription String?                     @db.Text
+  aiDescription String?                      @db.Text
   comments      Comment[]
   likes         Like[]
-  author        User                        @relation(fields: [authorId], references: [id])
-  group         Group?                      @relation(fields: [groupId], references: [id])
-  embedding     Unsupported("vector(768)")?
+  author        User                         @relation(fields: [authorId], references: [id])
+  group         Group?                       @relation(fields: [groupId], references: [id])
+  embedding     Unsupported("vector(3072)")?
 }
 
 model Like {

@@ -8,6 +8,7 @@ import { Video, ResizeMode } from 'expo-av';
 import { apiFetch, API_URL } from "../../../lib/api";
 import { getToken } from "../../../lib/auth-store";
 import { useAuth } from "../../../context/AuthContext";
+import VideoRecorder from "../../../components/VideoRecorder";
 
 export default function CreatePost() {
     const router = useRouter();
@@ -19,6 +20,7 @@ export default function CreatePost() {
     const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
     const [caption, setCaption] = useState("");
     const [uploading, setUploading] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
 
     const pickImage = async (useCamera: boolean) => {
         let result;
@@ -83,14 +85,18 @@ export default function CreatePost() {
             // @ts-ignore: FormData expects specific object structure in RN
             formData.append('image', { uri: media, name: filename, type });
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
             const response = await fetch(`${API_URL}/post`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    // Content-Type is handled automatically by FormData
                 },
-                body: formData
+                body: formData,
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
 
             if (response.ok) {
                 setCaption("");
@@ -107,13 +113,30 @@ export default function CreatePost() {
                 Alert.alert("Error", err.error || "Failed to upload");
             }
 
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            Alert.alert("Error", "Failed to upload post");
+            if (error.name === 'AbortError') {
+                Alert.alert("Timeout", "The upload took too long. Please check your connection and try again.");
+            } else {
+                Alert.alert("Error", "Failed to upload post");
+            }
         } finally {
             setUploading(false);
         }
     };
+
+    if (isRecording) {
+        return (
+            <VideoRecorder
+                onVideoRecorded={(uri) => {
+                    setMedia(uri);
+                    setMediaType('video');
+                    setIsRecording(false);
+                }}
+                onCancel={() => setIsRecording(false)}
+            />
+        );
+    }
 
     return (
         <ScrollView className="flex-1 bg-white">
@@ -160,21 +183,29 @@ export default function CreatePost() {
                         </View>
                     </View>
                 ) : (
-                    <TouchableOpacity
-                        onPress={() => pickImage(true)}
-                        className="w-full aspect-[9/16] bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 items-center justify-center mb-6"
-                    >
-                        <View className="items-center">
-                            <Text className="text-4xl mb-2">📸</Text>
-                            <Text className="text-gray-500 font-semibold">Take Photo / Video</Text>
-                        </View>
-                    </TouchableOpacity>
-                )}
+                    <View className="w-full mb-6">
+                        <TouchableOpacity
+                            onPress={() => pickImage(true)}
+                            className="w-full aspect-[9/16] bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 items-center justify-center mb-4"
+                        >
+                            <View className="items-center">
+                                <Text className="text-4xl mb-2">📸</Text>
+                                <Text className="text-gray-500 font-semibold">Take Photo</Text>
+                            </View>
+                        </TouchableOpacity>
 
-                {!media && (
-                    <TouchableOpacity onPress={() => pickImage(false)} className="mb-8">
-                        <Text className="text-blue-500 font-semibold">Choose from Library</Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => setIsRecording(true)}
+                            className="w-full bg-red-50 p-4 rounded-xl flex-row items-center justify-center mb-4"
+                        >
+                            <Ionicons name="videocam" size={24} color="#ef4444" />
+                            <Text className="text-red-500 font-bold ml-2">Record Video (60s)</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity onPress={() => pickImage(false)} className="items-center py-2">
+                            <Text className="text-blue-500 font-semibold text-base">Choose from Library</Text>
+                        </TouchableOpacity>
+                    </View>
                 )}
 
                 {/* Caption Input */}

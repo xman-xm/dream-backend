@@ -54,9 +54,16 @@ type Post = {
     comments: number;
   };
   likes?: { id: string }[];
+  isLiked?: boolean;
+  isCommented?: boolean;
   // Special type for injection
   specialType?: 'SUGGESTIONS';
 };
+
+import { OfflineWrapper } from "../../../components/OfflineWrapper";
+import { useAutoRetry } from "../../../hooks/useAutoRetry";
+
+// ... existing imports
 
 export default function Page() {
   const router = useRouter();
@@ -66,32 +73,44 @@ export default function Page() {
   const [refreshing, setRefreshing] = useState(false);
 
   // Pagination State
-  const [cursor, setCursor] = useState<number | null>(0);
+  const [cursor, setCursor] = useState<number | string | null>(0);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
   const [commentModalVisible, setCommentModalVisible] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
-  const loadPosts = useCallback(async (startCursor: number | null = 0, isRefresh = false) => {
+  const loadPosts = useCallback(async (startCursor: number | string | null = 0, isRefresh = false) => {
     if (startCursor === null) return;
 
     try {
-      const response = await apiFetch(`/post?cursor=${startCursor}`);
+      // Pass cursor as string directly if it's an object/string, or number
+      const cursorParam = typeof startCursor === 'string' ? startCursor : String(startCursor);
+      const response = await apiFetch(`/post?cursor=${encodeURIComponent(cursorParam)}`);
       if (response.ok) {
         const data = await response.json();
         const newPosts: Post[] = data.posts || [];
-        const nextCursor = data.nextCursor; // Might be null
+        const nextCursor = data.nextCursor; // Might be null or object string
 
         setPosts(prev => {
-          let updated = isRefresh ? newPosts : [...prev, ...newPosts];
+          // Deduping logic: Create a map from existing posts
+          const existingPostsMap = new Map((isRefresh ? [] : prev).map(p => [p.id, p]));
+
+          // Add/Update with new posts
+          newPosts.forEach(p => {
+            existingPostsMap.set(p.id, p);
+          });
+
+          // Convert back to array
+          let updated = Array.from(existingPostsMap.values());
+
 
           // Inject Suggestions if we have enough posts and haven't injected yet
-          // Only injecting once for now at index 5
+          // Only injecting once for now at index 3
           const hasInjection = updated.some(p => p.specialType === 'SUGGESTIONS');
-          if (!hasInjection && updated.length >= 5) {
-            const head = updated.slice(0, 5);
-            const tail = updated.slice(5);
+          if (!hasInjection && updated.length >= 3) {
+            const head = updated.slice(0, 3);
+            const tail = updated.slice(3);
             updated = [...head, { id: 'suggestions-injection', specialType: 'SUGGESTIONS' } as any, ...tail];
           }
 
@@ -113,6 +132,12 @@ export default function Page() {
   useEffect(() => {
     loadPosts(0, true);
   }, [loadPosts]);
+
+  // Auto Retry on connection restore
+  useAutoRetry(() => {
+    console.log('Auto-retrying feed...');
+    loadPosts(0, true);
+  });
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -152,6 +177,7 @@ export default function Page() {
                     : Math.max((post._count?.likes || 0) - 1, 0),
                   comments: post._count?.comments || 0
                 },
+                isLiked: liked,
                 likes: liked ? [{ id: 'temp' }] : []
               }
               : post
@@ -263,34 +289,36 @@ export default function Page() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      <FlatList
-        data={posts}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={renderFooter}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        onEndReached={onEndReached}
-        onEndReachedThreshold={0.5}
-        contentContainerStyle={{ paddingBottom: 20 }}
-        ListEmptyComponent={
-          !loading ? (
-            <View className="p-8 items-center">
-              <Text className="text-gray-500 text-center">No posts found.</Text>
-              <Text className="text-gray-400 text-center text-sm mt-2">Pull down to refresh</Text>
-            </View>
-          ) : null
-        }
-      />
+      <OfflineWrapper onRetry={() => loadPosts(0, true)}>
+        <FlatList
+          data={posts}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={renderHeader}
+          ListFooterComponent={renderFooter}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          onEndReached={onEndReached}
+          onEndReachedThreshold={3}
+          contentContainerStyle={{ paddingBottom: 20 }}
+          ListEmptyComponent={
+            !loading ? (
+              <View className="p-8 items-center">
+                <Text className="text-gray-500 text-center">No posts found.</Text>
+                <Text className="text-gray-400 text-center text-sm mt-2">Pull down to refresh</Text>
+              </View>
+            ) : null
+          }
+        />
 
-      <CommentsModal
-        visible={commentModalVisible}
-        onClose={() => setCommentModalVisible(false)}
-        postId={selectedPostId || ''}
-        onCommentAdded={() => onRefresh()}
-      />
+        <CommentsModal
+          visible={commentModalVisible}
+          onClose={() => setCommentModalVisible(false)}
+          postId={selectedPostId || ''}
+          onCommentAdded={() => onRefresh()}
+        />
+      </OfflineWrapper>
     </View>
   );
 }

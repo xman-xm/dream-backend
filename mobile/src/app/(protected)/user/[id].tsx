@@ -112,7 +112,8 @@ export default function UserProfileScreen() {
             const res = await apiFetch(`/post?userId=${userId}`);
             if (res.ok) {
                 const data = await res.json();
-                setPosts(Array.isArray(data) ? data : []);
+                const postsData = data.posts || (Array.isArray(data) ? data : []);
+                setPosts(postsData);
             }
         } catch (e) {
             console.error(e);

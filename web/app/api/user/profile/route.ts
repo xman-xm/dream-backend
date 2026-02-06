@@ -46,6 +46,34 @@ export async function PATCH(req: Request) {
             avatarUrl = `/api/storage/${filename}`
         }
 
+        // Generate embedding if bio is changing
+        if (bio && bio !== user.bio) {
+            try {
+                const { getEmbedding } = await import("@/lib/gemini");
+                const vector = await getEmbedding(bio);
+
+                if (vector) {
+                    const vectorString = `[${vector.join(',')}]`;
+
+                    // initialize interestEmbedding if null (Cold Start)
+                    await prisma.$executeRaw`
+                        UPDATE "User" 
+                        SET "interestEmbedding" = ${vectorString}::vector 
+                        WHERE id = ${user.id} AND "interestEmbedding" IS NULL
+                     `;
+
+                    // Also update the static 'embedding' column
+                    await prisma.$executeRaw`
+                        UPDATE "User" 
+                        SET "embedding" = ${vectorString}::vector 
+                        WHERE id = ${user.id}
+                     `;
+                }
+            } catch (e) {
+                console.error("Error generating bio embedding:", e);
+            }
+        }
+
         const updatedUser = await prisma.user.update({
             where: { id: user.id },
             data: {

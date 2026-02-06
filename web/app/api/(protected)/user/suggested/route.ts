@@ -59,21 +59,25 @@ export async function GET(request: Request) {
         // Let's rely on popularity if no vector, or vector similarity if present.
         // And we'll LIMIT 20 to be safe.
 
+        // Strict Filtering Logic
+        // If user has no interest profile, we return NO suggestions (or very few trending if we wanted, but user asked to strict).
+        // If user has interest profile, we return ONLY those with similarity > 0.60.
+
+        if (!hasInterest) {
+            return NextResponse.json([]);
+        }
+
         const suggestedUsers = await prisma.$queryRaw`
             SELECT 
                 u.id, 
                 u.name, 
                 u.username, 
                 u."avatarUrl",
-                ${hasInterest
-                ? Prisma.sql`(1 - (u."interestEmbedding" <=> ${(userRecord as any).interestEmbedding}))`
-                : Prisma.sql`0.5`} as match_score
+                (1 - (u."interestEmbedding" <=> ${(userRecord as any).interestEmbedding})) as match_score
             FROM "User" u
             WHERE u.id NOT IN (${Prisma.join(excludedIdsArray)})
-            ORDER BY 
-                 ${hasInterest
-                ? Prisma.sql`(1 - (u."interestEmbedding" <=> ${(userRecord as any).interestEmbedding}))`
-                : Prisma.sql`u."createdAt"`} DESC
+            AND (1 - (u."interestEmbedding" <=> ${(userRecord as any).interestEmbedding})) > 0.60
+            ORDER BY match_score DESC
             LIMIT 20
         ` as any[]
 

@@ -50,6 +50,9 @@ import { useAuth } from "../../../context/AuthContext";
 
 import { PostItem } from "../../../components/PostItem";
 
+import { OfflineWrapper } from "../../../components/OfflineWrapper";
+import { useAutoRetry } from "../../../hooks/useAutoRetry";
+
 export default function Search() {
     const router = useRouter();
     const { token } = useAuth();
@@ -90,6 +93,13 @@ export default function Search() {
             setLoading(false);
         }
     };
+
+    useAutoRetry(() => {
+        if (query.trim()) {
+            console.log('Auto-retrying search...');
+            performSearch(query);
+        }
+    });
 
     const handleLike = async (postId: string) => {
         try {
@@ -221,95 +231,97 @@ export default function Search() {
     );
 
     return (
-        <View className="flex-1 bg-gray-50 pt-12">
-            <View className="px-4 pb-2 bg-white">
-                <Text className="text-2xl font-bold text-gray-900 mb-4">Search</Text>
-                <View className="flex-row items-center bg-gray-100 rounded-xl px-4 py-2.5">
-                    <Text className="mr-2 text-gray-400">🔍</Text>
-                    <TextInput
-                        className="flex-1 font-medium text-gray-900 text-base"
-                        placeholder="Search users, posts, or keywords..."
-                        placeholderTextColor="#9CA3AF"
-                        value={query}
-                        onChangeText={setQuery}
-                        autoCapitalize="none"
-                    />
-                    {query.length > 0 && (
-                        <TouchableOpacity onPress={() => setQuery('')}>
-                            <Text className="text-gray-400 font-bold ml-2">✕</Text>
-                        </TouchableOpacity>
-                    )}
+        <OfflineWrapper onRetry={() => { if (query) performSearch(query) }}>
+            <View className="flex-1 bg-gray-50 pt-12">
+                <View className="px-4 pb-2 bg-white">
+                    <Text className="text-2xl font-bold text-gray-900 mb-4">Search</Text>
+                    <View className="flex-row items-center bg-gray-100 rounded-xl px-4 py-2.5">
+                        <Text className="mr-2 text-gray-400">🔍</Text>
+                        <TextInput
+                            className="flex-1 font-medium text-gray-900 text-base"
+                            placeholder="Search users, posts, or keywords..."
+                            placeholderTextColor="#9CA3AF"
+                            value={query}
+                            onChangeText={setQuery}
+                            autoCapitalize="none"
+                        />
+                        {query.length > 0 && (
+                            <TouchableOpacity onPress={() => setQuery('')}>
+                                <Text className="text-gray-400 font-bold ml-2">✕</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
                 </View>
-            </View>
 
-            {renderTabs()}
+                {renderTabs()}
 
-            {loading ? (
-                <View className="p-8">
-                    <ActivityIndicator size="large" color="#2563EB" />
-                </View>
-            ) : (
-                <ScrollView className="flex-1 px-4 pt-4">
-                    {activeTab === 'all' || activeTab === 'users' ? (
-                        <>
-                            {results.users.length > 0 && (
-                                <View className="mb-6">
-                                    {activeTab === 'all' && <Text className="font-bold text-gray-500 mb-2 uppercase text-xs tracking-wider">People</Text>}
-                                    {results.users.map(user => (
-                                        <View key={user.id}>{renderUserItem({ item: user })}</View>
-                                    ))}
-                                </View>
-                            )}
-                        </>
-                    ) : null}
+                {loading ? (
+                    <View className="p-8">
+                        <ActivityIndicator size="large" color="#2563EB" />
+                    </View>
+                ) : (
+                    <ScrollView className="flex-1 px-4 pt-4">
+                        {activeTab === 'all' || activeTab === 'users' ? (
+                            <>
+                                {results.users.length > 0 && (
+                                    <View className="mb-6">
+                                        {activeTab === 'all' && <Text className="font-bold text-gray-500 mb-2 uppercase text-xs tracking-wider">People</Text>}
+                                        {results.users.map(user => (
+                                            <View key={user.id}>{renderUserItem({ item: user })}</View>
+                                        ))}
+                                    </View>
+                                )}
+                            </>
+                        ) : null}
 
-                    {activeTab === 'all' || activeTab === 'groups' ? (
-                        <>
-                            {results.groups.length > 0 && (
-                                <View className="mb-6">
-                                    {activeTab === 'all' && <Text className="font-bold text-gray-500 mb-2 uppercase text-xs tracking-wider">Groups</Text>}
-                                    {results.groups.map(group => (
-                                        <View key={group.id}>{renderGroupItem({ item: group })}</View>
-                                    ))}
-                                </View>
-                            )}
-                        </>
-                    ) : null}
+                        {activeTab === 'all' || activeTab === 'groups' ? (
+                            <>
+                                {results.groups.length > 0 && (
+                                    <View className="mb-6">
+                                        {activeTab === 'all' && <Text className="font-bold text-gray-500 mb-2 uppercase text-xs tracking-wider">Groups</Text>}
+                                        {results.groups.map(group => (
+                                            <View key={group.id}>{renderGroupItem({ item: group })}</View>
+                                        ))}
+                                    </View>
+                                )}
+                            </>
+                        ) : null}
 
-                    {activeTab === 'all' || activeTab === 'posts' ? (
-                        <>
-                            {results.posts.length > 0 && (
-                                <View className="flex-1">
-                                    {activeTab === 'all' && <Text className="font-bold text-gray-500 mb-2 uppercase text-xs tracking-wider">Posts</Text>}
-                                    {results.posts.map(post => (
-                                        <View key={post.id}>{renderPostItem({ item: post })}</View>
-                                    ))}
-                                </View>
-                            )}
-                        </>
-                    ) : null}
+                        {activeTab === 'all' || activeTab === 'posts' ? (
+                            <>
+                                {results.posts.length > 0 && (
+                                    <View className="flex-1">
+                                        {activeTab === 'all' && <Text className="font-bold text-gray-500 mb-2 uppercase text-xs tracking-wider">Posts</Text>}
+                                        {results.posts.map(post => (
+                                            <View key={post.id}>{renderPostItem({ item: post })}</View>
+                                        ))}
+                                    </View>
+                                )}
+                            </>
+                        ) : null}
 
-                    {!loading && query && results.users.length === 0 && results.groups.length === 0 && results.posts.length === 0 && (
-                        <View className="items-center justify-center py-10">
-                            <Text className="text-gray-500 text-center">No results found for "{query}"</Text>
-                        </View>
-                    )}
-                </ScrollView>
-            )}
+                        {!loading && query && results.users.length === 0 && results.groups.length === 0 && results.posts.length === 0 && (
+                            <View className="items-center justify-center py-10">
+                                <Text className="text-gray-500 text-center">No results found for "{query}"</Text>
+                            </View>
+                        )}
+                    </ScrollView>
+                )}
 
-            <CommentsModal
-                visible={commentModalVisible}
-                onClose={() => setCommentModalVisible(false)}
-                postId={selectedPostId || ''}
-                onCommentAdded={() => {
-                    // Refresh search results to update comment count
-                    if (query.trim()) {
+                <CommentsModal
+                    visible={commentModalVisible}
+                    onClose={() => setCommentModalVisible(false)}
+                    postId={selectedPostId || ''}
+                    onCommentAdded={() => {
+                        // Refresh search results to update comment count
                         if (query.trim()) {
-                            performSearch(query);
+                            if (query.trim()) {
+                                performSearch(query);
+                            }
                         }
-                    }
-                }}
-            />
-        </View>
+                    }}
+                />
+            </View>
+        </OfflineWrapper>
     );
 }

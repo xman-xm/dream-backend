@@ -25,6 +25,8 @@ type Post = {
         comments: number;
     };
     likes?: { id: string }[];
+    isLiked?: boolean;
+    isCommented?: boolean;
 };
 
 interface PostItemProps {
@@ -46,7 +48,8 @@ export const PostItem: React.FC<PostItemProps> = ({
     onUserPress,
     onOptionPress
 }) => {
-    const isLiked = post.likes && post.likes.length > 0;
+    const isLiked = post.isLiked !== undefined ? post.isLiked : (post.likes && post.likes.length > 0);
+    const isCommented = post.isCommented;
 
     return (
         <View className="bg-white mb-4 py-4 shadow-sm">
@@ -138,7 +141,11 @@ export const PostItem: React.FC<PostItemProps> = ({
                     className="flex-row items-center mr-5"
                     onPress={() => onComment(post.id)}
                 >
-                    <Ionicons name="chatbubble-outline" size={24} color="#000" />
+                    <Ionicons
+                        name={isCommented ? "chatbubble" : "chatbubble-outline"}
+                        size={24}
+                        color={isCommented ? "#000" : "#000"}
+                    />
                     {(post._count?.comments || 0) > 0 && (
                         <Text className="ml-1 text-sm font-medium">{post._count.comments}</Text>
                     )}

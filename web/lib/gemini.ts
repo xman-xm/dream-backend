@@ -12,7 +12,7 @@ export async function generateImageDescription(fileBuffer: Buffer, mimeType: str
     try {
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-        const prompt = "Analyze this image for a search engine. The image is in a 9:16 vertical portrait format. Provide a detailed, single-paragraph description including objects, colors, context, and mood. Also include a list of relevant keywords.";
+        const prompt = "Analyze this image or video to generate a list of 5-10 relevant high-intent keywords.Do not use general keywords, make keywords precise for the post.The search engine prioterizes precision over post number.";
 
         const imagePart = {
             inlineData: {
@@ -68,7 +68,7 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
     }
 
     try {
-        const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+        const model = genAI.getGenerativeModel({ model: "models/gemini-embedding-001" }, { apiVersion: 'v1beta' });
         const result = await model.embedContent(text);
 
         if (result && result.embedding && result.embedding.values) {

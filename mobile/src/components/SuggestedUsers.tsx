@@ -47,7 +47,7 @@ export const SuggestedUsers = () => {
             const res = await apiFetch('/friends', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ addresseeId: userId })
+                body: JSON.stringify({ targetUserId: userId })
             });
 
             if (!res.ok) {

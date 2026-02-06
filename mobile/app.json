@@ -11,19 +11,39 @@
     "version": "1.0.0",
     "ios": {
       "bundleIdentifier": "com.socialapp.mobile",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to let you create posts with photos and videos.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone to let you record audio for your videos."
+      }
     },
     "android": {
       "package": "com.socialapp.mobile",
       "googleServicesFile": "./google-services.json",
       "permissions": [
-        "NOTIFICATIONS"
+        "NOTIFICATIONS",
+        "CAMERA",
+        "RECORD_AUDIO"
       ]
     },
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera",
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you share them with your friends."
+        }
+      ]
     ],
     "extra": {
       "eas": {
