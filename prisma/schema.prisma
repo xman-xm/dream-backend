@@ -1,0 +1,394 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                     String                       @id @default(cuid())
+  email                  String                       @unique
+  username               String                       @unique
+  name                   String?
+  avatarUrl              String?
+  bio                    String?
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
+  password               String?
+  pushToken              String?
+  accounts               Account[]
+  comments               Comment[]
+  conversations          ConversationParticipant[]
+  receivedFriendRequests Friendship[]                 @relation("FriendshipAddressee")
+  sentFriendRequests     Friendship[]                 @relation("FriendshipRequester")
+  follows                Follow[]                     @relation("FollowFollower")
+  followers              Follow[]                     @relation("FollowFollowing")
+  notificationsReceived  Notification[]               @relation("NotificationRecipient")
+  notificationsSent      Notification[]               @relation("NotificationActor")
+  createdGroups          Group[]                      @relation("GroupCreator")
+  groupMemberships       GroupMember[]
+  likes                  Like[]
+  messagesSent           Message[]
+  posts                  Post[]
+  sessions               Session[]
+  creditLedger           CreditBalanceLedger[]
+  paymentTransactions    PaymentTransaction[]
+  generationJobs         GenerationJob[]
+  embedding              Unsupported("vector(3072)")?
+  interestEmbedding      Unsupported("vector(3072)")?
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Friendship {
+  id          String           @id @default(cuid())
+  requesterId String
+  addresseeId String
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id])
+  requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id])
+
+  @@unique([requesterId, addresseeId])
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+  follower    User     @relation("FollowFollower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("FollowFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+  @@index([followerId, createdAt])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  recipientId String
+  actorId     String
+  postId      String?
+  type        String
+  message     String
+  createdAt   DateTime @default(now())
+  readAt      DateTime?
+  recipient   User     @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor       User     @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  post        Post?    @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, createdAt])
+  @@index([recipientId, readAt])
+}
+
+model Group {
+  id          String                       @id @default(cuid())
+  name        String
+  description String?
+  avatarUrl   String?
+  coverUrl    String?
+  creatorId   String
+  createdAt   DateTime                     @default(now())
+  updatedAt   DateTime                     @updatedAt
+  creator     User                         @relation("GroupCreator", fields: [creatorId], references: [id])
+  members     GroupMember[]
+  posts       Post[]
+  embedding   Unsupported("vector(3072)")?
+  isPrivate   Boolean                      @default(false)
+}
+
+model GroupMember {
+  id       String            @id @default(cuid())
+  groupId  String
+  userId   String
+  role     GroupRole         @default(MEMBER)
+  status   GroupMemberStatus @default(ACCEPTED)
+  joinedAt DateTime          @default(now())
+  group    Group             @relation(fields: [groupId], references: [id])
+  user     User              @relation(fields: [userId], references: [id])
+
+  @@unique([groupId, userId])
+}
+
+model Post {
+  id                 String                       @id @default(cuid())
+  caption            String?
+  authorId           String
+  groupId            String?
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+  media              String
+  type               String
+  aiDescription      String?                      @db.Text
+  
+  // AI Video Native Ad Financed Lifetime Mechanics
+  isSponsored        Boolean                      @default(false)
+  sponsoredStatus    String                       @default("NONE") // NONE, SPONSORED_ACTIVE, MATURE_COMPLETED
+  viewsCount         Int                          @default(0)
+  qualifyingViews    Int                          @default(0)
+  minExposureTarget  Int                          @default(1000)
+  canDelete          Boolean                      @default(true)
+  generationCostUSD  Float                        @default(1.00)
+  videoEngineUsed    String                       @default("veo-3.1-lite")
+  
+  comments           Comment[]
+  likes              Like[]
+  adPlacements       AdPlacement[]
+  notifications      Notification[]
+  author             User                         @relation(fields: [authorId], references: [id])
+  group              Group?                       @relation(fields: [groupId], references: [id])
+  embedding          Unsupported("vector(3072)")?
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  postId    String
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model Conversation {
+  id           String                    @id @default(cuid())
+  isGroup      Boolean                   @default(false)
+  name         String?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  participants ConversationParticipant[]
+  messages     Message[]
+}
+
+model ConversationParticipant {
+  id             String       @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@unique([conversationId, userId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  content        String
+  senderId       String
+  conversationId String
+  createdAt      DateTime     @default(now())
+  readAt         DateTime?
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  sender         User         @relation(fields: [senderId], references: [id])
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum GroupRole {
+  ADMIN
+  MEMBER
+}
+
+enum GroupMemberStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+model AdProduct {
+  id              String        @id @default(cuid())
+  brandName       String
+  productName     String
+  category        String?
+  targetMessage   String?
+  cpmUSD          Float         @default(15.0)
+  placementFeeUSD Float         @default(0.80)
+  campaignStatus  String        @default("ACTIVE") // ACTIVE, EXPIRED, PAUSED
+  totalPlacements Int           @default(0)
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  placements      AdPlacement[]
+}
+
+model AdPlacement {
+  id               String    @id @default(cuid())
+  postId           String
+  adProductId      String
+  brandName        String
+  productName      String
+  placementType    String
+  placementFeePaid Float     @default(0.80)
+  inWorldContext   String?   @db.Text
+  visualElement    String?   @db.Text
+  createdAt        DateTime  @default(now())
+  
+  post             Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  adProduct        AdProduct @relation(fields: [adProductId], references: [id], onDelete: Cascade)
+}
+
+// -------------------------------------------------------------
+// Direct-Pay AI Video Generation & Credit Balance Ledger Models
+// -------------------------------------------------------------
+
+enum LedgerEntryType {
+  PURCHASE
+  RESERVE
+  DEDUCT
+  REFUND
+  BONUS
+}
+
+enum GenerationJobStatus {
+  QUEUED
+  GENERATING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model CreditBalanceLedger {
+  id          String          @id @default(cuid())
+  userId      String
+  amount      Int             // Positive for addition, negative for deduction/reservation
+  type        LedgerEntryType
+  referenceId String?         // References PaymentTransaction.id or GenerationJob.id
+  description String?
+  createdAt   DateTime        @default(now())
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+model PaymentTransaction {
+  id                      String        @id @default(cuid())
+  userId                  String
+  stripeCheckoutSessionId String?       @unique
+  stripePaymentIntentId   String?       @unique
+  amountCents             Int
+  creditsGranted          Int
+  currency                String        @default("usd")
+  status                  PaymentStatus @default(PENDING)
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  user                    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+model GenerationJob {
+  id                      String              @id @default(cuid())
+  userId                  String
+  prompt                  String              @db.Text
+  durationSeconds         Int                 @default(8)
+  resolution              String              @default("720p") // 720p, 1080p
+  aspectRatio             String              @default("16:9")
+  creditsReserved         Int
+  estimatedProviderCostUSD Float
+  actualProviderCostUSD   Float?
+  providerModel           String              @default("veo-3.1-lite")
+  status                  GenerationJobStatus @default(QUEUED)
+  errorMessage            String?             @db.Text
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  user                    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempts                GenerationAttempt[]
+  videoAsset              VideoAsset?
+  
+  @@index([userId])
+}
+
+model GenerationAttempt {
+  id                String        @id @default(cuid())
+  generationJobId   String
+  attemptNumber     Int           @default(1)
+  veoOperationId    String?
+  rawProviderStatus String?
+  errorMessage      String?       @db.Text
+  createdAt         DateTime      @default(now())
+
+  generationJob     GenerationJob @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
+}
+
+model VideoAsset {
+  id              String        @id @default(cuid())
+  generationJobId String        @unique
+  storageUrl      String
+  thumbnailUrl    String?
+  durationSeconds Int
+  resolution      String
+  aspectRatio     String
+  fileSizeBytes   Int?
+  createdAt       DateTime      @default(now())
+
+  generationJob   GenerationJob @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
+}
+
+
