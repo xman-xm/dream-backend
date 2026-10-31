@@ -3,6 +3,24 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-unified";
 import { createNotifications } from "@/lib/notification-service";
 
+type FollowListUser = {
+  id: string;
+  username: string;
+  name: string | null;
+  avatarUrl: string | null;
+  bio: string | null;
+};
+
+type FollowingEntry = {
+  createdAt: Date;
+  following: FollowListUser;
+};
+
+type FollowerEntry = {
+  createdAt: Date;
+  follower: FollowListUser;
+};
+
 export async function GET(request: Request) {
   const user = await getCurrentUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,8 +41,8 @@ export async function GET(request: Request) {
       }),
     ]);
     return NextResponse.json({
-      following: following.map((follow) => ({ ...follow.following, followedAt: follow.createdAt })),
-      followers: followers.map((follow) => ({ ...follow.follower, followedAt: follow.createdAt })),
+      following: following.map((follow: FollowingEntry) => ({ ...follow.following, followedAt: follow.createdAt })),
+      followers: followers.map((follow: FollowerEntry) => ({ ...follow.follower, followedAt: follow.createdAt })),
     });
   } catch (error) {
     console.error("Follow list error:", error);
