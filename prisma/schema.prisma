@@ -157,19 +157,10 @@ model Post {
   type               String
   aiDescription      String?                      @db.Text
   
-  // AI Video Native Ad Financed Lifetime Mechanics
-  isSponsored        Boolean                      @default(false)
-  sponsoredStatus    String                       @default("NONE") // NONE, SPONSORED_ACTIVE, MATURE_COMPLETED
-  viewsCount         Int                          @default(0)
-  qualifyingViews    Int                          @default(0)
-  minExposureTarget  Int                          @default(1000)
-  canDelete          Boolean                      @default(true)
-  generationCostUSD  Float                        @default(1.00)
   videoEngineUsed    String                       @default("veo-3.1-lite")
   
   comments           Comment[]
   likes              Like[]
-  adPlacements       AdPlacement[]
   notifications      Notification[]
   author             User                         @relation(fields: [authorId], references: [id])
   group              Group?                       @relation(fields: [groupId], references: [id])
@@ -250,38 +241,6 @@ enum GroupMemberStatus {
 enum MediaType {
   IMAGE
   VIDEO
-}
-
-model AdProduct {
-  id              String        @id @default(cuid())
-  brandName       String
-  productName     String
-  category        String?
-  targetMessage   String?
-  cpmUSD          Float         @default(15.0)
-  placementFeeUSD Float         @default(0.80)
-  campaignStatus  String        @default("ACTIVE") // ACTIVE, EXPIRED, PAUSED
-  totalPlacements Int           @default(0)
-  isActive        Boolean       @default(true)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  placements      AdPlacement[]
-}
-
-model AdPlacement {
-  id               String    @id @default(cuid())
-  postId           String
-  adProductId      String
-  brandName        String
-  productName      String
-  placementType    String
-  placementFeePaid Float     @default(0.80)
-  inWorldContext   String?   @db.Text
-  visualElement    String?   @db.Text
-  createdAt        DateTime  @default(now())
-  
-  post             Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  adProduct        AdProduct @relation(fields: [adProductId], references: [id], onDelete: Cascade)
 }
 
 // -------------------------------------------------------------

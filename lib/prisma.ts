@@ -10,7 +10,7 @@ const adapter = new PrismaPg(pool)
 const globalForPrisma = global as unknown as { prisma: PrismaClient }
 
 function getPrismaClient(): PrismaClient {
-  if (!globalForPrisma.prisma || !(globalForPrisma.prisma as any).adProduct) {
+  if (!globalForPrisma.prisma) {
     globalForPrisma.prisma = new PrismaClient({ adapter })
   }
   return globalForPrisma.prisma

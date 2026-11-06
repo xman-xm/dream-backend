@@ -1,10 +1,10 @@
-import AdDashboardClient from "./ad-dashboard/ad-dashboard-client";
+import { redirect } from "next/navigation";
 
 export const metadata = {
-  title: "AI Native Video Ad Platform | AdSynth",
-  description: "AI-native entertainment platform where advertising is a native component of content generation while preserving 100% of user creative intent.",
+  title: "AI Video Studio",
+  description: "Create videos with the AI video studio.",
 };
 
 export default function Home() {
-  return <AdDashboardClient />;
+  redirect("/veo-studio");
 }
