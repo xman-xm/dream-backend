@@ -17,11 +17,15 @@ async function ensureVideoPost(job: {
   });
   if (existingPost) return existingPost;
 
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_VEO_API_KEY;
-  if (!apiKey) throw new Error("Video provider is not configured");
+  const apiKey = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_GATEWAY_API_KEY;
+  if (!apiKey) {
+    throw new Error("Vercel AI Gateway API key is not configured");
+  }
 
   const upstream = await fetch(job.videoAsset.storageUrl, {
-    headers: { "x-goog-api-key": apiKey },
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
   });
   if (!upstream.ok) {
     throw new Error(`Unable to download generated video (${upstream.status})`);
@@ -37,7 +41,7 @@ async function ensureVideoPost(job: {
       media: mediaUrl,
       type: "VIDEO",
       aiDescription: job.prompt,
-      videoEngineUsed: "veo-3.1-lite",
+      videoEngineUsed: "bytedance/seedance-2.5",
     },
     include: { author: true },
   });

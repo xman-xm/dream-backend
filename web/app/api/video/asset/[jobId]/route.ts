@@ -41,12 +41,12 @@ export async function GET(
       return NextResponse.json({ error: "Video not found" }, { status: 404 });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_VEO_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: "Video provider is not configured" }, { status: 503 });
+    const apiKey = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_GATEWAY_API_KEY;
+    const headers = new Headers();
+    if (apiKey) {
+      headers.set("Authorization", `Bearer ${apiKey}`);
     }
 
-    const headers = new Headers({ "x-goog-api-key": apiKey });
     const range = req.headers.get("range");
     if (range) headers.set("range", range);
 
