@@ -1,10 +1,10 @@
-import Image from "next/image";
+import { redirect } from "next/navigation";
 
-export default async function Home() {
-  const posts = await fetch('http://localhost:3000/api/post').then(res => res.json())
-  console.log(posts)
-  return (
-    <>
-    </>
-  );
+export const metadata = {
+  title: "AI Video Studio",
+  description: "Create videos with the AI video studio.",
+};
+
+export default function Home() {
+  redirect("/veo-studio");
 }

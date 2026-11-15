@@ -12,7 +12,8 @@ type User = {
     bio?: string;
     _count?: {
         posts: number;
-        friends: number;
+        followers?: number;
+        following?: number;
     };
 };
 
@@ -64,31 +65,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const checkSession = async () => {
             try {
                 const storedToken = await getToken();
-                console.log('UseAuth: Checking session, found token:', storedToken ? 'Yes' : 'No');
 
                 if (storedToken) {
                     setTokenState(storedToken);
                     try {
-                        // Validate token and get user info
-                        console.log('UseAuth: Validating token with /user/me');
                         const response = await apiFetch('/user/me', { requiresAuth: true });
-                        console.log('UseAuth: /user/me response status:', response.status);
 
                         if (response.ok) {
                             const data = await response.json();
-                            console.log('UseAuth: User data received', data);
                             if (data.user) {
                                 setUser(data.user);
                             }
                         } else {
-                            // Token might be expired
-                            console.log('UseAuth: Token invalid or expired, removing');
                             await removeToken();
                             setTokenState(null);
+                            setUser(null);
                         }
                     } catch (err) {
-                        console.log('Failed to fetch user profile', err);
-                        // Don't remove token immediately on network error, but maybe prompt login
+                        // Keep the stored session through transient connectivity failures.
+                        console.warn('Could not validate the stored session while offline.');
                     }
                 }
             } catch (e) {
@@ -126,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 signIn,
                 signOut,
                 refreshUserProfile,
-                isAuthenticated: !!user,
+                isAuthenticated: !!token,
             }}
         >
             {children}

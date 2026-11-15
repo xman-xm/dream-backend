@@ -1,8 +1,7 @@
-import { Tabs } from "expo-router";
 import React from "react";
-import { Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { View } from "react-native";
+import { TouchableOpacity, View } from "react-native";
+import { Tabs, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { useAuth } from "../../../context/AuthContext";
 import { API_URL } from "../../../lib/api";
@@ -10,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function TabLayout() {
     const { user, token } = useAuth();
+    const router = useRouter();
     const insets = useSafeAreaInsets();
 
     return (
@@ -17,53 +17,89 @@ export default function TabLayout() {
             screenOptions={{
                 headerShown: false,
                 tabBarStyle: {
-                    backgroundColor: "#ffffff",
+                    backgroundColor: "#08080d",
                     borderTopWidth: 1,
-                    borderTopColor: "#e5e7eb",
-                    height: 60 + insets.bottom, // Base height + safe area inset
-                    paddingBottom: insets.bottom > 0 ? insets.bottom : 8, // Add safe area padding, or default 8
-                    paddingTop: 8,
+                    borderTopColor: "#ffffff12",
+                    height: 64 + insets.bottom,
+                    paddingBottom: insets.bottom > 0 ? insets.bottom : 7,
+                    paddingTop: 5,
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 20,
+                    elevation: 20,
                 },
-                tabBarActiveTintColor: "#2563EB",
-                tabBarInactiveTintColor: "#6B7280",
-                tabBarShowLabel: false,
+                tabBarActiveTintColor: "#ffffff",
+                tabBarInactiveTintColor: "#777581",
+                tabBarShowLabel: true,
+                tabBarLabelStyle: { fontSize: 10, fontWeight: "600", marginTop: 1 },
             }}
         >
             <Tabs.Screen
                 name="index"
                 options={{
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="home" size={28} color={color} />
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="friends"
-                options={{
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="people" size={28} color={color} />
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="post"
-                options={{
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="add-circle" size={32} color={color} />
+                    title: "Home",
+                    tabBarAccessibilityLabel: "Home feed",
+                    tabBarIcon: ({ color, focused }) => (
+                        <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
                     ),
                 }}
             />
             <Tabs.Screen
                 name="search"
                 options={{
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="search" size={28} color={color} />
+                    title: "Discover",
+                    tabBarAccessibilityLabel: "Discover creators and videos",
+                    tabBarIcon: ({ color }) => (
+                        <Ionicons name="search-outline" size={22} color={color} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="post"
+                options={{
+                    title: "Create",
+                    tabBarAccessibilityLabel: "Create an AI video or post",
+                    tabBarButton: (props) => (
+                        <TouchableOpacity
+                            onPress={() => router.push("/(protected)/create")}
+                            style={[props.style, { alignItems: "center", justifyContent: "center" }]}
+                            accessibilityRole="button"
+                            accessibilityLabel="Create video"
+                            accessibilityState={props.accessibilityState}
+                            testID={props.testID}
+                            onLongPress={props.onLongPress}
+                        >
+                            <View style={{
+                                width: 42,
+                                height: 32,
+                                borderRadius: 11,
+                                backgroundColor: '#ffffff',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                            }}>
+                                <Ionicons name="sparkles" size={19} color="#16131f" />
+                            </View>
+                        </TouchableOpacity>
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="friends"
+                options={{
+                    title: "Activity",
+                    tabBarAccessibilityLabel: "Activity notifications",
+                    tabBarIcon: ({ color }) => (
+                        <Ionicons name="notifications-outline" size={22} color={color} />
                     ),
                 }}
             />
             <Tabs.Screen
                 name="profile"
                 options={{
+                    title: "Profile",
+                    tabBarAccessibilityLabel: "Your profile",
                     tabBarIcon: ({ color, focused }) => (
                         user?.avatarUrl ? (
                             <View style={{

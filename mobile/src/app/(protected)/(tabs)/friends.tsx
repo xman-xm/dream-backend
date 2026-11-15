@@ -1,405 +1,119 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, Dimensions, Alert, RefreshControl } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, FlatList, RefreshControl, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
 import { apiFetch, API_URL } from "../../../lib/api";
-
-type FriendUser = {
-    id: string;
-    name: string;
-    username: string;
-    avatarUrl?: string;
-    friendshipId: string;
-};
-
 import { useAuth } from "../../../context/AuthContext";
 
-type Group = {
-    id: string;
-    name: string;
-    avatarUrl: string | null;
-    memberCount: number;
+dayjs.extend(relativeTime);
+
+type InboxNotification = {
+  id: string;
+  type: "FOLLOW" | "NEW_POST" | "LIKE" | "COMMENT";
+  message: string;
+  createdAt: string;
+  readAt: string | null;
+  actor: { id: string; username: string; name: string | null; avatarUrl: string | null };
+  post: { id: string; media: string; type: string; caption: string | null } | null;
 };
 
-export default function Friends() {
-    const router = useRouter();
-    const { token } = useAuth();
-    const [viewMode, setViewMode] = useState<'friends' | 'groups'>('friends');
-    const [friends, setFriends] = useState<FriendUser[]>([]);
-    const [groups, setGroups] = useState<Group[]>([]);
-    const [requests, setRequests] = useState<FriendUser[]>([]);
-    const [sentRequests, setSentRequests] = useState<FriendUser[]>([]);
-    const [declinedRequests, setDeclinedRequests] = useState<FriendUser[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
+export default function NotificationsScreen() {
+  const router = useRouter();
+  const { token } = useAuth();
+  const [items, setItems] = useState<InboxNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-    const fetchFriends = useCallback(async () => {
-        try {
-            const res = await apiFetch('/friends');
-            if (res.ok) {
-                const data = await res.json();
-                setFriends(data.friends || []);
-                setRequests(data.incomingRequests || []);
-                setSentRequests(data.sentRequests || []);
-                setDeclinedRequests(data.declinedRequests || []);
-            }
-        } catch (error) {
-            console.error("Error fetching friends data:", error);
-        }
-    }, []);
+  const load = useCallback(async () => {
+    try {
+      const response = await apiFetch("/notifications");
+      if (!response.ok) throw new Error("Could not load notifications");
+      const data = await response.json();
+      setItems(data.notifications || []);
+      setUnreadCount(data.unreadCount || 0);
+    } catch (error) {
+      console.error("Notifications load failed:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
-    const fetchGroups = useCallback(async () => {
-        try {
-            const res = await apiFetch('/groups/member');
-            if (res.ok) {
-                const data = await res.json();
-                setGroups(data);
-            }
-        } catch (error) {
-            console.error("Error fetching groups data:", error);
-        }
-    }, []);
+  useEffect(() => { void load(); }, [load]);
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        await Promise.all([fetchFriends(), fetchGroups()]);
-        setLoading(false);
-    }, [fetchFriends, fetchGroups]);
+  const markRead = async (notification: InboxNotification) => {
+    if (notification.readAt) return;
+    setItems((current) => current.map((item) => item.id === notification.id ? { ...item, readAt: new Date().toISOString() } : item));
+    setUnreadCount((count) => Math.max(0, count - 1));
+    try {
+      await apiFetch("/notifications", { method: "PATCH", body: JSON.stringify({ notificationId: notification.id }) });
+    } catch (error) {
+      console.warn("Could not mark notification read:", error);
+    }
+  };
 
-    useEffect(() => {
-        loadData();
-    }, [loadData]);
+  const markAllRead = async () => {
+    setItems((current) => current.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })));
+    setUnreadCount(0);
+    try {
+      await apiFetch("/notifications", { method: "PATCH", body: JSON.stringify({ markAllRead: true }) });
+    } catch (error) {
+      console.warn("Could not mark notifications read:", error);
+    }
+  };
 
-    const onRefresh = async () => {
-        setRefreshing(true);
-        await Promise.all([fetchFriends(), fetchGroups()]);
-        setRefreshing(false);
-    };
+  const openNotification = async (notification: InboxNotification) => {
+    await markRead(notification);
+    router.push(`/(protected)/user/${notification.actor.id}`);
+  };
 
-    const handleAccept = async (friendshipId: string) => {
-        try {
-            const res = await apiFetch('/friends', {
-                method: 'PATCH',
-                body: JSON.stringify({ friendshipId })
-            });
-            if (res.ok) {
-                Alert.alert("Connected!", "You are now friends.");
-                fetchFriends(); // Reload to move from requests to friends
-            } else {
-                Alert.alert("Error", "Could not accept request");
-            }
-        } catch (e) {
-            Alert.alert("Error", "Network error");
-        }
-    };
-
-    const handleDelete = async (friendshipId: string) => {
-        try {
-            const res = await apiFetch(`/friends?id=${friendshipId}`, {
-                method: 'DELETE'
-            });
-            if (res.ok) {
-                fetchFriends(); // Reload to remove
-            }
-        } catch (e) {
-            Alert.alert("Error", "Network error");
-        }
-    };
-
-    const handleDecline = async (friendshipId: string) => {
-        try {
-            const res = await apiFetch('/friends', {
-                method: 'PATCH',
-                body: JSON.stringify({ friendshipId, action: 'DECLINE' })
-            });
-            if (res.ok) {
-                Alert.alert("Declined", "You have declined this request.");
-                fetchFriends();
-            } else {
-                Alert.alert("Error", "Could not decline request");
-            }
-        } catch (e) {
-            Alert.alert("Error", "Network error");
-        }
-    };
-
-    const renderRequestItem = ({ item }: { item: FriendUser }) => (
-        <View className="flex-row items-center justify-between py-3 px-4 bg-white border-b border-gray-100">
-            <View className="flex-row items-center flex-1">
-                <View className="w-12 h-12 rounded-full bg-gray-200 mr-3 overflow-hidden">
-                    {item.avatarUrl ? (
-                        <Image
-                            source={{
-                                uri: item.avatarUrl.startsWith('http')
-                                    ? item.avatarUrl
-                                    : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
-                                headers: { Authorization: `Bearer ${token}` }
-                            }}
-                            style={{ width: 48, height: 48 }}
-                            contentFit="cover"
-                        />
-                    ) : (
-                        <View className="w-full h-full items-center justify-center bg-blue-100">
-                            <Text className="text-blue-500 font-bold text-lg">{(item.name?.[0] || item.username?.[0] || '?').toUpperCase()}</Text>
-                        </View>
-                    )}
-                </View>
-                <View>
-                    <Text className="font-bold text-gray-900">{item.name || item.username}</Text>
-                    <Text className="text-gray-500 text-xs">wants to be friends</Text>
-                </View>
-            </View>
-            <View className="flex-row space-x-2">
-                <TouchableOpacity
-                    className="bg-blue-600 px-4 py-2 rounded-lg mr-2"
-                    onPress={() => handleAccept(item.friendshipId)}
-                >
-                    <Text className="text-white font-bold text-sm  ">Confirm</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    className="bg-gray-200 px-4 py-2 rounded-lg"
-                    onPress={() => handleDecline(item.friendshipId)}
-                >
-                    <Text className="text-gray-700 font-bold text-sm">Decline</Text>
-                </TouchableOpacity>
-            </View>
-        </View>
-    );
-
-    const renderSentRequestItem = ({ item }: { item: FriendUser }) => (
-        <View className="flex-row items-center justify-between py-3 px-4 bg-white border-b border-gray-100">
-            <View className="flex-row items-center flex-1">
-                <View className="w-12 h-12 rounded-full bg-gray-200 mr-3 overflow-hidden">
-                    {item.avatarUrl ? (
-                        <Image
-                            source={{
-                                uri: item.avatarUrl.startsWith('http')
-                                    ? item.avatarUrl
-                                    : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
-                                headers: { Authorization: `Bearer ${token}` }
-                            }}
-                            style={{ width: 48, height: 48 }}
-                            contentFit="cover"
-                        />
-                    ) : (
-                        <View className="w-full h-full items-center justify-center bg-gray-300">
-                            <Text className="text-gray-500 font-bold text-lg">{(item.name?.[0] || item.username?.[0] || '?').toUpperCase()}</Text>
-                        </View>
-                    )}
-                </View>
-                <View>
-                    <Text className="font-bold text-gray-900">{item.name || item.username}</Text>
-                    <Text className="text-gray-500 text-xs">Request Sent</Text>
-                </View>
-            </View>
-            <TouchableOpacity
-                className="bg-gray-200 px-4 py-2 rounded-lg"
-                onPress={() => handleDelete(item.friendshipId)}
-            >
-                <Text className="text-gray-700 font-bold text-sm">Cancel</Text>
-            </TouchableOpacity>
-        </View>
-    );
-
-    const renderDeclinedItem = ({ item }: { item: FriendUser }) => (
-        <View className="flex-row items-center justify-between py-3 px-4 bg-white border-b border-gray-100 opacity-60">
-            <View className="flex-row items-center flex-1">
-                <View className="w-12 h-12 rounded-full bg-gray-200 mr-3 overflow-hidden grayscale">
-                    {item.avatarUrl ? (
-                        <Image
-                            source={{
-                                uri: item.avatarUrl.startsWith('http')
-                                    ? item.avatarUrl
-                                    : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
-                                headers: { Authorization: `Bearer ${token}` }
-                            }}
-                            style={{ width: 48, height: 48 }}
-                            contentFit="cover"
-                        />
-                    ) : (
-                        <View className="w-full h-full items-center justify-center bg-gray-300">
-                            <Text className="text-gray-500 font-bold text-lg">{(item.name?.[0] || item.username?.[0] || '?').toUpperCase()}</Text>
-                        </View>
-                    )}
-                </View>
-                <View>
-                    <Text className="font-bold text-gray-900">{item.name || item.username}</Text>
-                    <Text className="text-red-500 text-xs">Declined your request</Text>
-                </View>
-            </View>
-            <TouchableOpacity
-                className="bg-gray-100 px-4 py-2 rounded-lg"
-                onPress={() => handleDelete(item.friendshipId)}
-            >
-                <Text className="text-gray-500 font-bold text-sm">Remove</Text>
-            </TouchableOpacity>
-        </View>
-    );
-
-    const renderFriendItem = ({ item }: { item: FriendUser }) => (
-        <TouchableOpacity
-            className="flex-row items-center p-4 bg-white mb-1 rounded-xl shadow-sm"
-            onPress={() => router.push(`/(protected)/user/${item.id}`)}
-        >
-            <View className="w-12 h-12 bg-gray-200 rounded-full mr-3 overflow-hidden border border-gray-100">
-                {item.avatarUrl ? (
-                    <Image
-                        source={{
-                            uri: item.avatarUrl.startsWith('http')
-                                ? item.avatarUrl
-                                : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
-                            headers: { Authorization: `Bearer ${token}` }
-                        }}
-                        style={{ width: '100%', height: '100%' }}
-                        contentFit="cover"
-                    />
-                ) : (
-                    <View className="w-full h-full items-center justify-center bg-gray-300">
-                        <Text className="text-gray-600 font-bold">{(item.name?.[0] || item.username?.[0] || '?').toUpperCase()}</Text>
-                    </View>
-                )}
-            </View>
-            <View className="flex-1">
-                <Text className="font-bold text-gray-900 text-base">{item.name || item.username}</Text>
-                <Text className="text-gray-500 text-sm">@{item.username}</Text>
-            </View>
-            <TouchableOpacity className="p-2">
-                <Ionicons name="ellipsis-horizontal" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-        </TouchableOpacity>
-    );
-
-    const renderGroupItem = ({ item }: { item: Group }) => (
-        <TouchableOpacity
-            className="flex-row items-center p-4 bg-white mb-1 rounded-xl shadow-sm"
-            onPress={() => router.push(`/(protected)/groups/${item.id}`)}
-        >
-            <View className="w-12 h-12 bg-blue-100 rounded-xl mr-3 overflow-hidden border border-blue-50 items-center justify-center">
-                {item.avatarUrl ? (
-                    <Image
-                        source={{
-                            uri: item.avatarUrl.startsWith('http')
-                                ? item.avatarUrl
-                                : `${API_URL.replace('/api', '')}${item.avatarUrl}`,
-                            headers: { Authorization: `Bearer ${token}` }
-                        }}
-                        style={{ width: '100%', height: '100%' }}
-                        contentFit="cover"
-                    />
-                ) : (
-                    <Ionicons name="people" size={24} color="#3B82F6" />
-                )}
-            </View>
-            <View className="flex-1">
-                <Text className="font-bold text-gray-900 text-base">{item.name}</Text>
-                <Text className="text-gray-500 text-sm">{item.memberCount} members</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-        </TouchableOpacity>
-    );
+  const renderItem = ({ item }: { item: InboxNotification }) => {
+    const avatarUrl = item.actor.avatarUrl
+      ? (item.actor.avatarUrl.startsWith("http") ? item.actor.avatarUrl : `${API_URL.replace("/api", "")}${item.actor.avatarUrl}`)
+      : null;
+    const iconName = item.type === "FOLLOW" ? "person-add" : item.type === "NEW_POST" ? "play" : item.type === "LIKE" ? "heart" : "chatbubble";
+    const videoUri = item.post?.media
+      ? (item.post.media.startsWith("http") ? item.post.media : `${API_URL.replace("/api", "")}${item.post.media}`)
+      : null;
 
     return (
-        <View className="flex-1 bg-gray-50 pt-12 px-4">
-            <View className="flex-row items-center justify-between mb-4">
-                <Text className="text-2xl font-bold text-gray-900">Directory</Text>
-                <TouchableOpacity onPress={() => router.push('/(protected)/groups/create')}>
-                    <Ionicons name="add-circle" size={28} color="#2563EB" />
-                </TouchableOpacity>
-            </View>
-
-            {/* View Mode Toggle */}
-            <View className="flex-row bg-gray-200 p-1 rounded-xl mb-4">
-                <TouchableOpacity
-                    className={`flex-1 py-2 rounded-lg items-center ${viewMode === 'friends' ? 'bg-white shadow-sm' : ''}`}
-                    onPress={() => setViewMode('friends')}
-                >
-                    <Text className={`font-bold ${viewMode === 'friends' ? 'text-gray-900' : 'text-gray-500'}`}>Friends</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    className={`flex-1 py-2 rounded-lg items-center ${viewMode === 'groups' ? 'bg-white shadow-sm' : ''}`}
-                    onPress={() => setViewMode('groups')}
-                >
-                    <Text className={`font-bold ${viewMode === 'groups' ? 'text-gray-900' : 'text-gray-500'}`}>Groups</Text>
-                </TouchableOpacity>
-            </View>
-
-            {loading ? (
-                <View className="flex-1 items-center justify-center">
-                    <ActivityIndicator size="large" color="#2563EB" />
-                </View>
-            ) : viewMode === 'groups' ? (
-                <FlatList
-                    data={groups}
-                    renderItem={renderGroupItem}
-                    keyExtractor={(item) => item.id}
-                    refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-                    }
-                    ListEmptyComponent={
-                        <View className="items-center justify-center py-20">
-                            <Ionicons name="people-outline" size={64} color="#D1D5DB" />
-                            <Text className="text-gray-500 mt-4 text-center">You haven't joined any groups yet.</Text>
-                            <TouchableOpacity onPress={() => router.push('/(protected)/groups/create')}>
-                                <Text className="text-blue-600 font-bold mt-2">Create a Group</Text>
-                            </TouchableOpacity>
-                        </View>
-                    }
-                />
-            ) : (
-                <FlatList
-                    data={friends}
-                    ListHeaderComponent={
-                        <>
-                            {requests.length > 0 && (
-                                <View className="mb-6">
-                                    <Text className="text-lg font-bold text-gray-900 mb-3">Friend Requests</Text>
-                                    {requests.map(item => (
-                                        <View key={item.id} className="mb-2">
-                                            {renderRequestItem({ item })}
-                                        </View>
-                                    ))}
-                                </View>
-                            )}
-
-                            {sentRequests.length > 0 && (
-                                <View className="mb-6">
-                                    <Text className="text-lg font-bold text-gray-900 mb-3">Sent Requests</Text>
-                                    {sentRequests.map(item => (
-                                        <View key={item.id} className="mb-2">
-                                            {renderSentRequestItem({ item })}
-                                        </View>
-                                    ))}
-                                </View>
-                            )}
-
-                            {declinedRequests.length > 0 && (
-                                <View className="mb-6">
-                                    <Text className="text-lg font-bold text-gray-900 mb-3">Declined Requests</Text>
-                                    {declinedRequests.map(item => (
-                                        <View key={item.friendshipId}>
-                                            {renderDeclinedItem({ item })}
-                                        </View>
-                                    ))}
-                                </View>
-                            )}
-
-                            <Text className="text-lg font-bold text-gray-900 mb-3">My Friends</Text>
-                        </>
-                    }
-                    renderItem={renderFriendItem}
-                    keyExtractor={(item) => item.id}
-                    refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-                    }
-                    ListEmptyComponent={
-                        <View className="items-center justify-center py-20">
-                            <Ionicons name="person-add-outline" size={64} color="#D1D5DB" />
-                            <Text className="text-gray-500 mt-4">No friends yet.</Text>
-                        </View>
-                    }
-                />
-            )}
+      <TouchableOpacity onPress={() => void openNotification(item)} className={`flex-row items-center px-4 py-4 border-b border-zinc-800 ${item.readAt ? "bg-[#090b10]" : "bg-[#141923]"}`}>
+        <View className="w-12 h-12 rounded-full bg-zinc-800 overflow-visible items-center justify-center mr-3">
+          {avatarUrl ? <Image source={{ uri: avatarUrl, headers: token ? { Authorization: `Bearer ${token}` } : undefined }} style={{ width: 48, height: 48, borderRadius: 24 }} contentFit="cover" /> : <Text className="text-violet-300 font-bold">{(item.actor.name?.[0] || item.actor.username[0] || "?").toUpperCase()}</Text>}
+          <View className="absolute -right-1 -bottom-1 w-5 h-5 rounded-full bg-violet-500 border-2 border-[#090b10] items-center justify-center"><Ionicons name={iconName as "play"} size={10} color="#fff" /></View>
         </View>
+        <View className="flex-1 mr-2">
+          <Text className="text-zinc-300 text-sm leading-5"><Text className="text-white font-bold">{item.actor.name || `@${item.actor.username}`}</Text>{" "}{item.message}</Text>
+          <Text className="text-zinc-500 text-xs mt-1">{dayjs(item.createdAt).fromNow()}</Text>
+        </View>
+        {!item.readAt ? <View className="w-2 h-2 rounded-full bg-violet-400 mr-2" /> : null}
+        {videoUri ? <Image source={{ uri: videoUri, headers: token ? { Authorization: `Bearer ${token}` } : undefined }} style={{ width: 42, height: 56, borderRadius: 8 }} contentFit="cover" /> : null}
+      </TouchableOpacity>
     );
+  };
+
+  return (
+    <View className="flex-1 bg-[#090b10] pt-12">
+      <View className="px-5 pb-4 flex-row items-center justify-between border-b border-zinc-800 bg-[#101318]">
+        <View>
+          <Text className="text-zinc-100 text-2xl font-bold">Activity</Text>
+          <Text className="text-zinc-500 text-xs mt-1">Follows and updates from creators</Text>
+        </View>
+        {unreadCount > 0 ? <TouchableOpacity onPress={() => void markAllRead()}><Text className="text-violet-300 text-sm font-semibold">Mark all read</Text></TouchableOpacity> : null}
+      </View>
+      {loading ? <View className="flex-1 items-center justify-center"><ActivityIndicator color="#a78bfa" size="large" /></View> : (
+        <FlatList
+          data={items}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor="#a78bfa" />}
+          ListEmptyComponent={<View className="items-center justify-center py-24 px-8"><View className="w-16 h-16 rounded-2xl bg-[#151922] items-center justify-center mb-4"><Ionicons name="notifications-outline" size={28} color="#8b91a1" /></View><Text className="text-zinc-100 font-bold text-lg">You’re all caught up</Text><Text className="text-zinc-500 text-sm text-center mt-2">When someone follows you or a creator posts a video, you’ll see it here.</Text></View>}
+        />
+      )}
+    </View>
+  );
 }

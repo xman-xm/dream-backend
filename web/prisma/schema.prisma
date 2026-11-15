@@ -17,18 +17,24 @@ model User {
   createdAt              DateTime                     @default(now())
   updatedAt              DateTime                     @updatedAt
   password               String?
-  pushToken              String?
   accounts               Account[]
   comments               Comment[]
   conversations          ConversationParticipant[]
   receivedFriendRequests Friendship[]                 @relation("FriendshipAddressee")
   sentFriendRequests     Friendship[]                 @relation("FriendshipRequester")
+  follows                Follow[]                     @relation("FollowFollower")
+  followers              Follow[]                     @relation("FollowFollowing")
+  notificationsReceived  Notification[]               @relation("NotificationRecipient")
+  notificationsSent      Notification[]               @relation("NotificationActor")
   createdGroups          Group[]                      @relation("GroupCreator")
   groupMemberships       GroupMember[]
   likes                  Like[]
   messagesSent           Message[]
   posts                  Post[]
   sessions               Session[]
+  creditLedger           CreditBalanceLedger[]
+  paymentTransactions    PaymentTransaction[]
+  generationJobs         GenerationJob[]
   embedding              Unsupported("vector(3072)")?
   interestEmbedding      Unsupported("vector(3072)")?
 }
@@ -80,6 +86,36 @@ model Friendship {
   @@unique([requesterId, addresseeId])
 }
 
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+  follower    User     @relation("FollowFollower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("FollowFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+  @@index([followerId, createdAt])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  recipientId String
+  actorId     String
+  postId      String?
+  type        String
+  message     String
+  createdAt   DateTime @default(now())
+  readAt      DateTime?
+  recipient   User     @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor       User     @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  post        Post?    @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, createdAt])
+  @@index([recipientId, readAt])
+}
+
 model Group {
   id          String                       @id @default(cuid())
   name        String
@@ -110,20 +146,24 @@ model GroupMember {
 }
 
 model Post {
-  id            String                       @id @default(cuid())
-  caption       String?
-  authorId      String
-  groupId       String?
-  createdAt     DateTime                     @default(now())
-  updatedAt     DateTime                     @updatedAt
-  media         String
-  type          String
-  aiDescription String?                      @db.Text
-  comments      Comment[]
-  likes         Like[]
-  author        User                         @relation(fields: [authorId], references: [id])
-  group         Group?                       @relation(fields: [groupId], references: [id])
-  embedding     Unsupported("vector(3072)")?
+  id                 String                       @id @default(cuid())
+  caption            String?
+  authorId           String
+  groupId            String?
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+  media              String
+  type               String
+  aiDescription      String?                      @db.Text
+
+  videoEngineUsed    String                       @default("veo-3.1-lite")
+
+  comments           Comment[]
+  likes              Like[]
+  notifications      Notification[]
+  author             User                         @relation(fields: [authorId], references: [id])
+  group              Group?                       @relation(fields: [groupId], references: [id])
+  embedding          Unsupported("vector(3072)")?
 }
 
 model Like {
@@ -201,3 +241,112 @@ enum MediaType {
   IMAGE
   VIDEO
 }
+
+// -------------------------------------------------------------
+// Direct-Pay AI Video Generation & Credit Balance Ledger Models
+// -------------------------------------------------------------
+
+enum LedgerEntryType {
+  PURCHASE
+  RESERVE
+  DEDUCT
+  REFUND
+  BONUS
+}
+
+enum GenerationJobStatus {
+  QUEUED
+  GENERATING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model CreditBalanceLedger {
+  id          String          @id @default(cuid())
+  userId      String
+  amount      Int             // Positive for addition, negative for deduction/reservation
+  type        LedgerEntryType
+  referenceId String?         // References PaymentTransaction.id or GenerationJob.id
+  description String?
+  createdAt   DateTime        @default(now())
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PaymentTransaction {
+  id                      String        @id @default(cuid())
+  userId                  String
+  stripeCheckoutSessionId String?       @unique
+  stripePaymentIntentId   String?       @unique
+  amountCents             Int
+  creditsGranted          Int
+  currency                String        @default("usd")
+  status                  PaymentStatus @default(PENDING)
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  user                    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model GenerationJob {
+  id                      String              @id @default(cuid())
+  userId                  String
+  prompt                  String              @db.Text
+  durationSeconds         Int                 @default(8)
+  resolution              String              @default("720p") // 720p, 1080p
+  aspectRatio             String              @default("16:9")
+  creditsReserved         Int
+  estimatedProviderCostUSD Float
+  actualProviderCostUSD   Float?
+  providerModel           String              @default("veo-3.1-lite")
+  status                  GenerationJobStatus @default(QUEUED)
+  errorMessage            String?             @db.Text
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  user                    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempts                GenerationAttempt[]
+  videoAsset              VideoAsset?
+
+  @@index([userId])
+}
+
+model GenerationAttempt {
+  id                String        @id @default(cuid())
+  generationJobId   String
+  attemptNumber     Int           @default(1)
+  veoOperationId    String?
+  rawProviderStatus String?
+  errorMessage      String?       @db.Text
+  createdAt         DateTime      @default(now())
+
+  generationJob     GenerationJob @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
+}
+
+model VideoAsset {
+  id              String        @id @default(cuid())
+  generationJobId String        @unique
+  storageUrl      String
+  thumbnailUrl    String?
+  durationSeconds Int
+  resolution      String
+  aspectRatio     String
+  fileSizeBytes   Int?
+  createdAt       DateTime      @default(now())
+
+  generationJob   GenerationJob @relation(fields: [generationJobId], references: [id], onDelete: Cascade)
+}
+
+

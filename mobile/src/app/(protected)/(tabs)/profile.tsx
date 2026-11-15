@@ -24,13 +24,15 @@ dayjs.updateLocale('en', {
 });
 
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, FlatList, RefreshControl, Alert } from "react-native";
+import { View, Text, TouchableOpacity, FlatList, RefreshControl, Alert, Modal, Pressable, Share } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../../context/AuthContext";
 import { apiFetch, API_URL } from "../../../lib/api";
 import { getToken } from "../../../lib/auth-store";
 import { Image } from "expo-image";
+import { Video, ResizeMode } from "expo-av";
 import { CommentsModal } from "../../../components/CommentsModal";
+import { VideoPlayground, VideoPlaygroundTab } from "../../../components/VideoPlayground";
 
 import { Ionicons } from "@expo/vector-icons";
 
@@ -47,6 +49,7 @@ type Post = {
     media: string;
     type: string;
     createdAt: string;
+    aiDescription?: string | null;
     author: Author;
     _count?: {
         likes: number;
@@ -69,6 +72,9 @@ export default function Profile() {
     const [refreshing, setRefreshing] = useState(false);
     const [commentModalVisible, setCommentModalVisible] = useState(false);
     const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+    const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+    const [selectedVideoIndex, setSelectedVideoIndex] = useState<number | null>(null);
+    const [profileTab, setProfileTab] = useState<"posts" | "videos">("posts");
 
     const fetchUserPosts = async () => {
         try {
@@ -204,13 +210,49 @@ export default function Profile() {
         }
     };
 
+    const totalLikes = posts.reduce((total, post) => total + (post._count?.likes || 0), 0);
+    const videoPosts = posts.filter((post) => post.type === "VIDEO");
+
+    const navigateFromVideo = (tab: VideoPlaygroundTab) => {
+        setSelectedVideoIndex(null);
+        const routes = {
+            home: "/(protected)/(tabs)",
+            search: "/(protected)/(tabs)/search",
+            create: "/(protected)/create",
+            notifications: "/(protected)/(tabs)/friends",
+            profile: "/(protected)/(tabs)/profile",
+        } as const;
+        router.push(routes[tab]);
+    };
+
+    const handleShareProfile = async () => {
+        await Share.share({
+            message: `Check out @${user?.username || 'this profile'}`,
+        });
+    };
+
+    const showProfileOptions = () => {
+        Alert.alert("Account", undefined, [
+            { text: "Edit profile", onPress: () => router.push("/(protected)/edit-profile") },
+            { text: "Sign out", style: "destructive", onPress: () => void signOut() },
+            { text: "Cancel", style: "cancel" },
+        ]);
+    };
+
     const renderHeader = () => (
         <View>
             {/* Profile Info Section */}
-            <View className="bg-white px-6 py-6 border-b border-gray-200">
+            <View className="bg-black px-5 pt-5 pb-4">
+                <View className="flex-row items-center justify-between mb-5">
+                    <View className="w-10" />
+                    <Text className="text-white text-base font-bold">{user?.username || 'profile'}</Text>
+                    <TouchableOpacity onPress={showProfileOptions} className="w-10 h-10 items-center justify-center" accessibilityRole="button" accessibilityLabel="Account options">
+                        <Ionicons name="menu-outline" size={25} color="#fff" />
+                    </TouchableOpacity>
+                </View>
                 {user && (
                     <View className="items-center mb-4">
-                        <View className="w-24 h-24 rounded-full bg-gray-200 mb-4 overflow-hidden border-4 border-white shadow-sm items-center justify-center">
+                        <View className="w-24 h-24 rounded-full bg-zinc-800 mb-3 overflow-hidden border border-zinc-600 items-center justify-center">
                             {user.avatarUrl ? (
                                 <Image
                                     source={{
@@ -228,85 +270,189 @@ export default function Profile() {
                                 </Text>
                             )}
                         </View>
-                        <Text className="text-xl font-bold text-gray-900">{user.name || user.username || 'User'}</Text>
-                        <Text className="text-gray-500 text-sm mb-1">@{user.username}</Text>
+                        <Text className="text-xl font-bold text-white">{user.name || user.username || 'User'}</Text>
+                        <Text className="text-zinc-400 text-sm mb-3">@{user.username}</Text>
                         {user.bio && (
-                            <Text className="text-gray-700 text-center px-8 mb-2 leading-5">
+                            <Text className="text-zinc-300 text-center px-8 mb-3">
                                 {user.bio}
                             </Text>
                         )}
 
-                        <View className="flex-row justify-center mt-4 mb-4 space-x-8">
-                            <View className="items-center px-4">
-                                <Text className="font-bold text-lg text-gray-900">{user._count?.posts || 0}</Text>
-                                <Text className="text-gray-500 text-sm">Posts</Text>
+                        <View className="flex-row justify-center mb-4">
+                            <View className="items-center px-5">
+                                <Text className="font-bold text-lg text-white">{totalLikes}</Text>
+                                <Text className="text-zinc-400 text-xs">Likes</Text>
                             </View>
-                            <View className="items-center px-4">
-                                <Text className="font-bold text-lg text-gray-900">{user._count?.friends || 0}</Text>
-                                <Text className="text-gray-500 text-sm">Friends</Text>
+                            <View className="items-center px-5">
+                                <Text className="font-bold text-lg text-white">{user._count?.posts || 0}</Text>
+                                <Text className="text-zinc-400 text-xs">Posts</Text>
+                            </View>
+                            <View className="items-center px-5">
+                                <Text className="font-bold text-lg text-white">{user._count?.followers || 0}</Text>
+                                <Text className="text-zinc-400 text-xs">Followers</Text>
                             </View>
                         </View>
 
-                        <TouchableOpacity
-                            onPress={() => router.push("/(protected)/edit-profile")}
-                            className="bg-blue-50 py-3 px-6 rounded-xl border border-blue-100 mt-2 mb-2 w-full items-center"
-                        >
-                            <Text className="text-blue-600 font-bold">Edit Profile</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            onPress={signOut}
-                            className="py-3 px-6 rounded-xl mt-2"
-                        >
-                            <Text className="text-red-500 font-medium text-sm">Sign Out</Text>
-                        </TouchableOpacity>
+                        <View className="flex-row items-center justify-center mb-2">
+                            <TouchableOpacity onPress={handleShareProfile} className="bg-zinc-900 py-2.5 px-8 rounded-full border border-zinc-700 mr-2">
+                                <Text className="text-white font-bold text-sm">Share</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => router.push("/(protected)/edit-profile")} className="bg-zinc-900 py-2.5 px-8 rounded-full border border-zinc-700">
+                                <Text className="text-white font-bold text-sm">Edit profile</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 )}
             </View>
 
-            {/* Posts Header */}
-            <View className="bg-white px-6 py-3 border-b border-gray-200">
-                <Text className="text-lg font-bold text-gray-900">My Posts</Text>
-                <Text className="text-gray-500 text-sm">{posts.length} {posts.length === 1 ? 'post' : 'posts'}</Text>
+            {/* Profile tabs */}
+            <View className="bg-black border-b border-zinc-800 flex-row">
+                {(["posts", "videos"] as const).map((tab) => (
+                    <TouchableOpacity key={tab} onPress={() => setProfileTab(tab)} className={`flex-1 items-center py-3 border-b-2 ${profileTab === tab ? "border-white" : "border-transparent"}`} accessibilityRole="tab" accessibilityState={{ selected: profileTab === tab }}>
+                        <Ionicons name={tab === "posts" ? "grid-outline" : "videocam-outline"} size={20} color={profileTab === tab ? "#fff" : "#71717a"} />
+                        <Text className={`text-[10px] mt-1 capitalize ${profileTab === tab ? "text-white" : "text-zinc-500"}`}>{tab}</Text>
+                    </TouchableOpacity>
+                ))}
             </View>
         </View>
     );
 
-    const renderItem = ({ item }: { item: Post }) => (
-        <PostItem
-            post={item as any}
-            token={token}
-            currentUserId={user?.id}
-            onLike={handleLike}
-            onComment={(id) => {
-                setSelectedPostId(id);
-                setCommentModalVisible(true);
-            }}
-            onUserPress={(userId) => router.push(`/(protected)/user/${userId}`)}
-            onOptionPress={handlePostOptions}
-        />
-    );
+    const renderItem = ({ item }: { item: Post }) => {
+        const mediaUri = item.media.startsWith('http')
+            ? item.media
+            : `${API_URL.replace('/api', '')}${item.media}`;
+
+        return (
+            <TouchableOpacity
+                activeOpacity={0.88}
+                onPress={() => {
+                    if (item.type === "VIDEO") {
+                        setSelectedVideoIndex(videoPosts.findIndex((videoPost) => videoPost.id === item.id));
+                    } else {
+                        setSelectedPost(item);
+                    }
+                }}
+                style={{ width: `${100 / 3}%`, aspectRatio: 9 / 16, padding: 1 }}
+            >
+                {item.type === 'VIDEO' ? (
+                    <View className="flex-1 bg-gray-900">
+                        <Video
+                            source={{ uri: mediaUri, headers: { Authorization: `Bearer ${token}` } }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode={ResizeMode.COVER}
+                            shouldPlay={false}
+                            isMuted
+                            onError={(error) => console.error(`[Profile grid video] ${item.id}:`, error)}
+                        />
+                        <View className="absolute left-2 bottom-2 flex-row items-center">
+                            <Ionicons name="play" size={12} color="#fff" />
+                            <Text className="text-white text-[10px] font-bold ml-1">VIDEO</Text>
+                        </View>
+                    </View>
+                ) : (
+                    <Image
+                        source={{ uri: mediaUri, headers: { Authorization: `Bearer ${token}` } }}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="cover"
+                    />
+                )}
+            </TouchableOpacity>
+        );
+    };
 
     return (
-        <View className="flex-1 bg-gray-50">
+        <View className="flex-1 bg-black">
             <OfflineWrapper onRetry={onRefresh}>
                 <FlatList
-                    data={posts}
+                    data={profileTab === "videos" ? posts.filter((post) => post.type === "VIDEO") : posts}
                     renderItem={renderItem}
                     keyExtractor={(item) => item.id}
+                    numColumns={3}
                     ListHeaderComponent={renderHeader}
                     refreshControl={
                         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
                     }
+                    columnWrapperStyle={{ width: '100%' }}
                     contentContainerStyle={{ paddingBottom: 20 }}
                     ListEmptyComponent={
                         !loading ? (
-                            <View className="p-8 items-center bg-white">
-                                <Text className="text-gray-500 text-center">No posts yet.</Text>
-                                <Text className="text-gray-400 text-center text-sm mt-2">Create your first post!</Text>
+                            <View className="p-8 items-center bg-black">
+                                <Text className="text-zinc-400 text-center">No posts yet.</Text>
+                                <Text className="text-zinc-600 text-center text-sm mt-2">Create your first post!</Text>
                             </View>
                         ) : null
                     }
+                />
+
+                <Modal visible={Boolean(selectedPost)} animationType="slide" onRequestClose={() => setSelectedPost(null)}>
+                    <View className="flex-1 bg-black">
+                        <Pressable
+                            onPress={() => setSelectedPost(null)}
+                            className="absolute z-10 right-4 top-12 h-10 w-10 rounded-full bg-black/60 items-center justify-center"
+                        >
+                            <Ionicons name="close" size={26} color="#fff" />
+                        </Pressable>
+                        {selectedPost ? (
+                            <PostItem
+                                post={selectedPost as any}
+                                token={token}
+                                currentUserId={user?.id}
+                                immersive
+                                isActive
+                                onLike={handleLike}
+                                onComment={(postId) => {
+                                    setSelectedPostId(postId);
+                                    setCommentModalVisible(true);
+                                }}
+                                onUserPress={(userId) => {
+                                    setSelectedPost(null);
+                                    router.push(`/(protected)/user/${userId}`);
+                                }}
+                                onOptionPress={handlePostOptions}
+                            />
+                        ) : null}
+                    </View>
+                </Modal>
+
+                <VideoPlayground
+                    visible={selectedVideoIndex !== null}
+                    videos={videoPosts.map((post) => ({
+                        url: post.media.startsWith("http") ? post.media : `${API_URL.replace("/api", "")}${post.media}`,
+                        username: post.author.username || post.author.name || "Creator",
+                        caption: post.caption,
+                        creationLabel: post.aiDescription ? "AI-generated" : undefined,
+                        avatarUrl: post.author.avatarUrl
+                            ? (post.author.avatarUrl.startsWith("http") ? post.author.avatarUrl : `${API_URL.replace("/api", "")}${post.author.avatarUrl}`)
+                            : null,
+                        likesCount: post._count?.likes || 0,
+                        commentsCount: post._count?.comments || 0,
+                        isLiked: Boolean(post.likes?.length),
+                    }))}
+                    initialIndex={selectedVideoIndex ?? 0}
+                    headers={token ? { Authorization: `Bearer ${token}` } : undefined}
+                    bottomAvatarUrl={user?.avatarUrl
+                        ? (user.avatarUrl.startsWith("http") ? user.avatarUrl : `${API_URL.replace("/api", "")}${user.avatarUrl}`)
+                        : null}
+                    showBottomNavigation
+                    showHeaderControls={false}
+                    showFeedHeader
+                    onClose={() => setSelectedVideoIndex(null)}
+                    onLike={(index) => {
+                        const post = videoPosts[index];
+                        if (post) void handleLike(post.id);
+                    }}
+                    onComment={(index) => {
+                        const post = videoPosts[index];
+                        if (post) {
+                            setSelectedPostId(post.id);
+                            setCommentModalVisible(true);
+                        }
+                    }}
+                    onShare={(index) => {
+                        const post = videoPosts[index];
+                        if (post) void Share.share({ message: post.caption || "Check out this video" });
+                    }}
+                    onBottomTabPress={navigateFromVideo}
                 />
 
                 <CommentsModal

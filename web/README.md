@@ -77,6 +77,18 @@ Create a new post with an image.
   ```
 - **Response**: `Post object`
 
+## Video storage (Vercel Blob)
+
+Uploaded and generated videos are stored in a **private Vercel Blob store**. The app serves them through the authenticated `/api/storage/[filename]` route, including byte-range requests for playback.
+
+1. In the Vercel project connected to this backend, create a Blob store with **Private** access.
+2. Connect the store to the project in its **Projects** tab and enable the **Production**, **Preview**, and (if needed) **Development** environments. Vercel supplies `BLOB_STORE_ID` and OIDC credentials to deployed functions.
+3. For local development, connect the Development environment and run `vercel env pull` from the `web` directory. Keep the downloaded environment file out of Git.
+4. Redeploy the backend after connecting the store. New uploaded and generated videos will then persist in Blob storage; local development without Blob credentials continues to use `web/storage`.
+5. To migrate videos that still exist locally, run `npm run migrate:videos` from `web` after pulling the Blob environment. It preserves their existing paths so database media URLs continue to work.
+
+Videos that were already saved to an ephemeral server filesystem are not copied automatically. Restore them to `web/storage` or re-upload them before running the migration.
+
 #### **PUT** `/api/(protected)/post/[id]`
 Update a post.
 - **Body**: `{ caption?, media? }`

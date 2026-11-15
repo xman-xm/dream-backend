@@ -2,9 +2,9 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { Prisma } from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth-unified"
+import { storeVideo } from "@/lib/video-storage"
 import { writeFile } from "fs/promises"
 import { join } from "path"
-import { sendPushNotification } from "@/lib/notifications"
 
 export async function GET(request: Request) {
     const user = await getCurrentUser(request)
@@ -83,6 +83,7 @@ export async function GET(request: Request) {
                     p.id, 
                     p."createdAt", 
                     p.caption, 
+                    p."aiDescription",
                     p.media, 
                     p.type,
                     p."authorId", 
@@ -100,7 +101,13 @@ export async function GET(request: Request) {
                 JOIN "User" u ON p."authorId" = u.id
                 LEFT JOIN "Like" l ON p.id = l."postId"
                 LEFT JOIN "Comment" c ON p.id = c."postId"
-                WHERE p."authorId" != ${user.id}
+                WHERE (
+                    p."authorId" = ${user.id}
+                    OR EXISTS (
+                        SELECT 1 FROM "Follow" f
+                        WHERE f."followerId" = ${user.id} AND f."followingId" = p."authorId"
+                    )
+                )
                 AND p.type = ${type}
                 GROUP BY p.id, u.id
                 ORDER BY 
@@ -111,14 +118,7 @@ export async function GET(request: Request) {
                             ((LEAST(LOG(COUNT(l.id) + COUNT(c.id) + 1), 5) / 5) * 0.3)
                         ) 
                         * 
-                        CASE 
-                            WHEN EXISTS (
-                                SELECT 1 FROM "Friendship" f 
-                                WHERE (f."requesterId" = ${user.id} AND f."addresseeId" = p."authorId" AND f.status = 'ACCEPTED')
-                                OR (f."addresseeId" = ${user.id} AND f."requesterId" = p."authorId" AND f.status = 'ACCEPTED')
-                            ) THEN 1.75
-                            ELSE 1.1
-                        END
+                        CASE WHEN p."authorId" = ${user.id} THEN 1.25 ELSE 1.0 END
                     ) DESC
                 LIMIT ${limit} OFFSET ${offset}
             ` as any[];
@@ -138,6 +138,7 @@ export async function GET(request: Request) {
             id: row.id,
             createdAt: row.createdAt,
             caption: row.caption,
+            aiDescription: row.aiDescription,
             media: row.media,
             type: row.type,
             authorId: row.authorId,
@@ -228,13 +229,7 @@ export async function POST(request: Request) {
     try {
         const formData = await request.formData()
         const caption = formData.get('caption') as string
-        const authorId = formData.get('authorId') as string
-        const groupId = formData.get('groupId') as string | null
         const file = formData.get('image') as File | null
-
-        if (!authorId) {
-            return NextResponse.json({ error: 'Author ID is required' }, { status: 400 })
-        }
 
         let mediaUrl = ''
         let mediaType = 'IMAGE'
@@ -246,19 +241,17 @@ export async function POST(request: Request) {
             // Ensure unique filename
             const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`
             const filename = `${uniqueSuffix}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '')}`
+            const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v)$/i.test(filename)
 
-            // Save to secure storage (not public)
-            const uploadDir = join(process.cwd(), 'storage')
-            const filepath = join(uploadDir, filename)
-
-            await writeFile(filepath, buffer)
-
-            // Set secure API URL
-            mediaUrl = `/api/storage/${filename}`
-
-            // Robust type detection
-            if (file.type.startsWith('video/') || filename.endsWith('.mp4') || filename.endsWith('.mov')) {
+            if (isVideo) {
                 mediaType = 'VIDEO'
+                mediaUrl = await storeVideo(filename, buffer, file.type)
+            } else {
+                // Image storage remains local; videos use durable private Blob storage.
+                const uploadDir = join(process.cwd(), 'storage')
+                const filepath = join(uploadDir, filename)
+                await writeFile(filepath, buffer)
+                mediaUrl = `/api/storage/${filename}`
             }
         }
 
@@ -273,8 +266,8 @@ export async function POST(request: Request) {
         const post = await prisma.post.create({
             data: {
                 caption: caption || '',
-                authorId,
-                groupId,
+                authorId: user.id,
+                groupId: null,
                 media: mediaUrl,
                 type: mediaType,
                 aiDescription: null, // Will be updated asynchronously
@@ -284,46 +277,25 @@ export async function POST(request: Request) {
             }
         })
 
-        // Notify Friends
-        const friends = await prisma.friendship.findMany({
-            where: {
-                OR: [
-                    { requesterId: user.id },
-                    { addresseeId: user.id }
-                ],
-                status: 'ACCEPTED'
-            },
-            include: {
-                requester: { select: { id: true, pushToken: true } },
-                addressee: { select: { id: true, pushToken: true } }
+        if (mediaType === 'VIDEO') {
+            const followers = await prisma.follow.findMany({
+                where: { followingId: user.id },
+                select: { followerId: true },
+            });
+            if (followers.length) {
+            const { createNotifications } = await import("@/lib/notification-service");
+            try {
+                await createNotifications(followers.map(({ followerId }) => ({
+                    recipientId: followerId,
+                    actorId: user.id,
+                    type: "NEW_POST" as const,
+                    message: "posted a new video.",
+                    postId: post.id,
+                })));
+            } catch (notificationError) {
+                console.error("Unable to save upload notifications:", notificationError);
             }
-        })
-
-
-        // Get current user's push token to avoid self-notifications (e.g. same device testing)
-        const currentUser = await prisma.user.findUnique({
-            where: { id: user.id },
-            select: { pushToken: true }
-        })
-
-        const tokens: string[] = []
-        friends.forEach(f => {
-            const friend = f.requesterId === user.id ? f.addressee : f.requester
-            if (friend.pushToken && friend.pushToken !== currentUser?.pushToken) {
-                tokens.push(friend.pushToken)
             }
-        })
-
-        console.log(`[DEBUG] Found ${friends.length} friends for user ${user.id}`);
-        console.log(`[DEBUG] Sending notifications to ${tokens.length} tokens`);
-
-        if (tokens.length > 0) {
-            await sendPushNotification(
-                tokens,
-                `New Post from ${user.name || user.username}`,
-                `Check out what ${user.name || user.username} just posted!`,
-                { postId: post.id }
-            )
         }
 
         // --- Background AI Task ---

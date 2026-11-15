@@ -36,55 +36,22 @@ export async function GET(
             return NextResponse.json({ error: 'User not found' }, { status: 404 })
         }
 
-        // Determine relationship status
-        let status = 'NONE'; // NONE, FRIENDS, SENT_REQUEST, RECEIVED_REQUEST, SELF
-
-        if (currentUser.id === targetUserId) {
-            status = 'SELF';
-        } else {
-            const friendship = await prisma.friendship.findFirst({
-                where: {
-                    OR: [
-                        { requesterId: currentUser.id, addresseeId: targetUserId },
-                        { requesterId: targetUserId, addresseeId: currentUser.id }
-                    ]
-                }
-            })
-
-            if (friendship) {
-                if (friendship.status === 'ACCEPTED') {
-                    status = 'FRIENDS';
-                } else if (friendship.status === 'PENDING') {
-                    if (friendship.requesterId === currentUser.id) {
-                        status = 'SENT_REQUEST';
-                    } else {
-                        status = 'RECEIVED_REQUEST';
-                    }
-                }
-                // IGNORED/DECLINED could be treated as NONE or specific status if needed
-            }
-        }
-
-        // Optional: Mutual Friends Count
-        // To be implemented later if needed for optimization, current plan lists it as optional.
-
-        // Calculate counts
-        const friendsCount = await prisma.friendship.count({
-            where: {
-                OR: [
-                    { requesterId: targetUserId, status: 'ACCEPTED' },
-                    { addresseeId: targetUserId, status: 'ACCEPTED' }
-                ]
-            }
-        });
-
-        const postsCount = await prisma.post.count({
-            where: { authorId: targetUserId }
-        });
+        const [isFollowing, followersCount, followingCount, postsCount] = await Promise.all([
+            currentUser.id === targetUserId
+                ? Promise.resolve(false)
+                : prisma.follow.findUnique({
+                    where: { followerId_followingId: { followerId: currentUser.id, followingId: targetUserId } },
+                    select: { id: true },
+                }).then(Boolean),
+            prisma.follow.count({ where: { followingId: targetUserId } }),
+            prisma.follow.count({ where: { followerId: targetUserId } }),
+            prisma.post.count({ where: { authorId: targetUserId } }),
+        ]);
 
         return NextResponse.json({
-            user: { ...targetUser, _count: { posts: postsCount, friends: friendsCount } },
-            status
+            user: { ...targetUser, _count: { posts: postsCount, followers: followersCount, following: followingCount } },
+            isFollowing,
+            isSelf: currentUser.id === targetUserId
         })
 
     } catch (error) {

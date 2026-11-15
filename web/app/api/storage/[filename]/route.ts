@@ -1,24 +1,61 @@
 import { NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/auth-unified"
+import { getStoredVideo, getLocalVideoPath, isBlobStorageConfigured } from "@/lib/video-storage"
 import { createReadStream, statSync, existsSync } from "fs" // synchronous stat is fine for this checking
-import { join } from "path"
 import { Readable } from 'stream'
 
 export async function GET(
     request: Request,
     props: { params: Promise<{ filename: string }> }
 ) {
-    const user = await getCurrentUser(request)
+    const { filename } = await props.params
+    const safeFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '')
+    const isGeneratedVideo = safeFilename.startsWith('generated-') && safeFilename.endsWith('.mp4')
 
-    if (!user) {
+    if (!isGeneratedVideo && !await getCurrentUser(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { filename } = await props.params
+    const isVideo = /\.(mp4|mov|webm|m4v)$/i.test(safeFilename)
+    const range = request.headers.get('range')
 
-    const safeFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '')
-    const storageDir = join(process.cwd(), 'storage')
-    const filepath = join(storageDir, safeFilename)
+    if (isVideo) {
+        if (process.env.VERCEL && !isBlobStorageConfigured()) {
+            return NextResponse.json(
+                { error: 'Video storage is not configured. Connect a private Vercel Blob store.' },
+                { status: 503 },
+            )
+        }
+
+        try {
+            const blob = await getStoredVideo(safeFilename, range)
+            if (blob?.statusCode === 200) {
+                const contentRange = blob.headers.get('content-range')
+                const headers = new Headers({
+                    'Content-Type': blob.headers.get('content-type') || blob.blob.contentType,
+                    'Cache-Control': 'private, no-cache',
+                    'Accept-Ranges': blob.headers.get('accept-ranges') || 'bytes',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range',
+                })
+                const contentLength = blob.headers.get('content-length')
+                if (contentLength) headers.set('Content-Length', contentLength)
+                else if (!contentRange) headers.set('Content-Length', String(blob.blob.size))
+                if (contentRange) headers.set('Content-Range', contentRange)
+
+                return new NextResponse(blob.stream, {
+                    status: contentRange ? 206 : 200,
+                    headers,
+                })
+            }
+        } catch (error) {
+            console.error('Error reading video from Blob storage:', error)
+            return NextResponse.json({ error: 'Unable to retrieve video' }, { status: 502 })
+        }
+    }
+
+    const filepath = getLocalVideoPath(safeFilename)
 
     if (!existsSync(filepath)) {
         return NextResponse.json({ error: 'File not found' }, { status: 404 })
@@ -27,8 +64,6 @@ export async function GET(
     try {
         const stat = statSync(filepath)
         const fileSize = stat.size
-        const range = request.headers.get('range')
-
         let contentType = 'application/octet-stream'
         if (filename.endsWith('.png')) contentType = 'image/png'
         else if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) contentType = 'image/jpeg'
@@ -42,18 +77,16 @@ export async function GET(
             const chunksize = (end - start) + 1
             const fileStream = createReadStream(filepath, { start, end })
 
-            // Convert node stream to web stream for NextResponse
-            // @ts-ignore
-            const stream = Readable.toWeb(fileStream)
+            const stream = Readable.toWeb(fileStream) as ReadableStream<Uint8Array>
 
-            return new NextResponse(stream as any, {
+            return new NextResponse(stream, {
                 status: 206,
                 headers: {
                     'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                     'Accept-Ranges': 'bytes',
                     'Content-Length': chunksize.toString(),
                     'Content-Type': contentType,
-                    'Cache-Control': 'private, max-age=3600',
+                    'Cache-Control': 'private, no-cache',
                     'Access-Control-Allow-Origin': '*',
                     'Access-Control-Allow-Methods': 'GET, OPTIONS',
                     'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range',
@@ -61,15 +94,14 @@ export async function GET(
             })
         } else {
             const fileStream = createReadStream(filepath)
-            // @ts-ignore
-            const stream = Readable.toWeb(fileStream)
+            const stream = Readable.toWeb(fileStream) as ReadableStream<Uint8Array>
 
-            return new NextResponse(stream as any, {
+            return new NextResponse(stream, {
                 status: 200,
                 headers: {
                     'Content-Length': fileSize.toString(),
                     'Content-Type': contentType,
-                    'Cache-Control': 'private, max-age=3600',
+                    'Cache-Control': 'private, no-cache',
                     'Access-Control-Allow-Origin': '*',
                     'Access-Control-Allow-Methods': 'GET, OPTIONS',
                     'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range',

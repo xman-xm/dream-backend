@@ -69,6 +69,22 @@ export async function POST(
             }
         })
 
+        const postOwner = await prisma.post.findUnique({ where: { id }, select: { authorId: true } });
+        if (postOwner && postOwner.authorId !== user.id) {
+            try {
+                const { createNotifications } = await import("@/lib/notification-service");
+                await createNotifications([{
+                    recipientId: postOwner.authorId,
+                    actorId: user.id,
+                    type: "COMMENT",
+                    message: `commented: ${content.trim().slice(0, 90)}`,
+                    postId: id,
+                }]);
+            } catch (notificationError) {
+                console.error("Unable to save comment notification:", notificationError);
+            }
+        }
+
         // Implicit Learning (Background)
         // Weight 0.10 for a Comment
         import("@/lib/learning").then(mod => {

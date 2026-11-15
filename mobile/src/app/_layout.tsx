@@ -3,7 +3,6 @@ import { Slot, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { AuthProvider, useAuth } from "../context/AuthContext";
-import { usePushNotifications } from "../hooks/usePushNotifications";
 import { NetworkProvider } from "../context/NetworkContext";
 
 function RootLayoutNav() {
@@ -11,33 +10,30 @@ function RootLayoutNav() {
   const segments = useSegments();
   const router = useRouter();
 
-  usePushNotifications();
-
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === "(auth)";
+    const inAuthGroup = segments[0] === "(user)" || segments[0] === "login" || segments[0] === "signup";
 
-    if (!isAuthenticated && !inAuthGroup && segments[0] !== "login" && segments[0] !== "signup") {
+    if (!isAuthenticated && !inAuthGroup) {
       // Redirect to the login page if not authenticated
       router.replace("/login");
-    } else if (isAuthenticated && (segments[0] === "login" || segments[0] === "signup")) {
+    } else if (isAuthenticated && inAuthGroup) {
       // Redirect to the home page if already authenticated. 
-      // This assumes current "login" is a top-level route based on my file creation
       router.replace("/");
     }
   }, [isAuthenticated, segments, isLoading]);
 
   if (isLoading) {
     return (
-      <View className="flex-1 justify-center items-center bg-white">
-        <ActivityIndicator size="large" color="#2563EB" />
+      <View className="flex-1 justify-center items-center bg-[#08080d]">
+        <ActivityIndicator size="large" color="#c4b5fd" />
       </View>
     );
   }
 
   return (
-    <View className="flex flex-1 bg-white">
+    <View className="flex flex-1 bg-[#08080d]">
       <Slot />
     </View>
   );

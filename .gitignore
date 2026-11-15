@@ -1,5 +1,6 @@
 node_modules
 .env
+*firebase-adminsdk*.json
 .DS_Store
 .next
 .expo

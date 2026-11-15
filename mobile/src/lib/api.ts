@@ -5,12 +5,23 @@ import { Platform } from 'react-native';
 // Since we are running on the same machine, localhost usually works for iOS Simulator.
 // For Android Emulator, we need to be careful.
 const DEV_API_URL = Platform.select({
-    android: 'http://10.0.2.2:3000/api', // Android Emulator
-    ios: 'http://localhost:3000/api',     // iOS Simulator
-    default: 'http://localhost:3000/api',  // Web
+    android: 'http://10.0.2.2:3000/api',
+    ios: 'http://localhost:3000/api',
+    default: 'http://localhost:3000/api',
 });
 
-export const API_URL = process.env.EXPO_PUBLIC_API_URL || DEV_API_URL;
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, "");
+export const API_URL = configuredApiUrl || DEV_API_URL || "http://localhost:3000/api";
+
+if (!__DEV__) {
+    if (!configuredApiUrl) {
+        throw new Error("EXPO_PUBLIC_API_URL must be set to the production API URL before building a release app.");
+    }
+
+    if (!configuredApiUrl.startsWith("https://")) {
+        throw new Error("EXPO_PUBLIC_API_URL must use HTTPS in release builds.");
+    }
+}
 
 type FetchOptions = RequestInit & {
     requiresAuth?: boolean;

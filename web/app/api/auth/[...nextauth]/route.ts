@@ -38,7 +38,13 @@ export const authOptions: NextAuthOptions = {
         }
     },
     pages: {
-        signIn: '/auth/signin', // You might want to create this custom page or remove to use default
+        signIn: '/auth/signin',
+    },
+    logger: {
+        error(code, metadata) {
+            if (code === 'JWT_SESSION_ERROR') return;
+            console.error(code, metadata);
+        }
     }
 }
 

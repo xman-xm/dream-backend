@@ -7,6 +7,7 @@ import {
     FlatList,
     TextInput,
     ActivityIndicator,
+    Alert,
     KeyboardAvoidingView,
     Platform
 } from "react-native";
@@ -52,7 +53,6 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
     const [submitting, setSubmitting] = useState(false);
 
     const EMOJIS = ['❤️', '🙌', '🔥', '👏', '😢', '😍', '😮', '🤣'];
-
     const fetchComments = useCallback(async () => {
         if (!postId) return;
         setLoading(true);
@@ -90,9 +90,13 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                 setComments(prev => [data, ...prev]);
                 setNewComment("");
                 if (onCommentAdded) onCommentAdded();
+            } else {
+                const data = await res.json().catch(() => null);
+                Alert.alert("Could not post comment", data?.error || "Please try again.");
             }
         } catch (error) {
             console.error("Error adding comment:", error);
+            Alert.alert("Could not post comment", "Check your connection and try again.");
         } finally {
             setSubmitting(false);
         }
@@ -124,22 +128,14 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                 )}
             </View>
             <View className="flex-1 pr-2">
-                <Text className="text-gray-900 text-[13px] leading-5">
-                    <Text className="font-bold">{item.author.username} </Text>
+                <Text className="text-zinc-200 text-[13px] leading-5">
+                    <Text className="font-bold text-white">{item.author.username} </Text>
                     {item.content}
                 </Text>
                 <View className="flex-row items-center mt-1.5">
-                    <Text className="text-gray-500 text-[11px] mr-4">
-                        {dayjs(item.createdAt).fromNow(true)}
-                    </Text>
-                    <TouchableOpacity className="mr-4">
-                        <Text className="text-gray-500 text-[11px] font-semibold">Reply</Text>
-                    </TouchableOpacity>
+                    <Text className="text-zinc-500 text-[11px]">{dayjs(item.createdAt).fromNow(true)}</Text>
                 </View>
             </View>
-            <TouchableOpacity className="mt-2">
-                <Ionicons name="heart-outline" size={14} color="#6B7280" />
-            </TouchableOpacity>
         </View>
     );
 
@@ -150,16 +146,16 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
             transparent={true}
             onRequestClose={onClose}
         >
-            <View className="flex-1 justify-end bg-black/40">
-                <View className="bg-white rounded-t-3xl flex-1 mt-20 overflow-hidden">
+            <View className="flex-1 justify-end bg-black/65">
+                <View className="bg-[#101318] rounded-t-3xl flex-1 mt-20 overflow-hidden border-t border-zinc-800">
                     {/* Header */}
-                    <View className="items-center pt-3 pb-2 border-b border-gray-100 z-10 bg-white">
-                        <View className="w-10 h-1 bg-gray-300 rounded-full mb-3" />
+                    <View className="items-center pt-3 pb-2 border-b border-zinc-800 z-10 bg-[#101318]">
+                        <View className="w-10 h-1 bg-zinc-700 rounded-full mb-3" />
                         <View className="flex-row items-center justify-between w-full px-4 mb-2">
                             <View className="w-8" />
-                            <Text className="text-[16px] font-bold text-gray-900">Comments</Text>
-                            <TouchableOpacity className="p-1">
-                                <Ionicons name="paper-plane-outline" size={22} color="#111827" />
+                            <Text className="text-[16px] font-bold text-zinc-100">Comments</Text>
+                            <TouchableOpacity onPress={onClose} className="p-1" accessibilityRole="button" accessibilityLabel="Close comments">
+                                <Ionicons name="close" size={23} color="#d4d4d8" />
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -170,10 +166,10 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
                     >
                         {/* Comments List */}
-                        <View className="flex-1 bg-white">
+                        <View className="flex-1 bg-[#101318]">
                             {loading ? (
                                 <View className="flex-1 items-center justify-center">
-                                    <ActivityIndicator color="#2563EB" />
+                                    <ActivityIndicator color="#a78bfa" />
                                 </View>
                             ) : (
                                 <FlatList
@@ -182,11 +178,11 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                                     keyExtractor={item => item.id}
                                     ListEmptyComponent={
                                         <View className="py-24 items-center justify-center">
-                                            <View className="w-20 h-20 bg-gray-50 rounded-full items-center justify-center mb-4">
-                                                <Ionicons name="chatbubble-outline" size={32} color="#CBD5E1" />
+                                            <View className="w-20 h-20 bg-zinc-900 rounded-full items-center justify-center mb-4">
+                                                <Ionicons name="chatbubble-outline" size={32} color="#52525b" />
                                             </View>
-                                            <Text className="text-gray-900 font-bold text-lg mb-1">No comments yet</Text>
-                                            <Text className="text-gray-400 text-center px-10 text-[13px]">
+                                            <Text className="text-zinc-100 font-bold text-lg mb-1">No comments yet</Text>
+                                            <Text className="text-zinc-500 text-center px-10 text-[13px]">
                                                 Start the conversation.
                                             </Text>
                                         </View>
@@ -198,7 +194,7 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                         </View>
 
                         {/* Input Area */}
-                        <View className="bg-white border-t border-gray-100 pb-5">
+                        <View className="bg-[#101318] border-t border-zinc-800" style={{ paddingBottom: Math.max(insets.bottom, 12) }}>
                             {/* Emoji Bar */}
                             <FlatList
                                 horizontal
@@ -219,30 +215,29 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
 
                             {/* Input Row */}
                             <View className="flex-row items-end px-3 py-2">
-                                <View className="w-9 h-9 rounded-full bg-gray-200 mr-3 overflow-hidden shrink-0 mb-1">
+                                <View className="w-9 h-9 rounded-full bg-zinc-800 mr-3 overflow-hidden shrink-0 mb-1">
                                     {user?.avatarUrl ? (
-                                        <Image
-                                            source={{
-                                                uri: user.avatarUrl.startsWith('http')
-                                                    ? user.avatarUrl
-                                                    : `${API_URL.replace('/api', '')}${user.avatarUrl}`,
-                                                headers: { Authorization: `Bearer ${token}` }
-                                            }}
-                                            style={{ width: '100%', height: '100%' }}
-                                        />
-                                    ) : (
-                                        <Image
-                                            source={{ uri: `https://ui-avatars.com/api/?name=${user?.name || user?.username || 'User'}&background=random` }}
-                                            style={{ width: '100%', height: '100%' }}
-                                        />
+                                            <Image
+                                                source={{
+                                                    uri: user.avatarUrl.startsWith('http')
+                                                        ? user.avatarUrl
+                                                        : `${API_URL.replace('/api', '')}${user.avatarUrl}`,
+                                                    headers: { Authorization: `Bearer ${token}` }
+                                                }}
+                                                style={{ width: '100%', height: '100%' }}
+                                            />
+                                        ) : (
+                                            <View className="flex-1 items-center justify-center bg-zinc-700">
+                                                <Text className="text-white font-bold">{(user?.name?.[0] || user?.username?.[0] || "U").toUpperCase()}</Text>
+                                            </View>
                                     )}
                                 </View>
 
-                                <View className="flex-1 flex-row items-end bg-gray-100 rounded-3xl px-4 min-h-[44px] border border-gray-200">
+                                <View className="flex-1 flex-row items-end bg-zinc-900 rounded-3xl px-4 min-h-[44px] border border-zinc-700">
                                     <TextInput
-                                        className="flex-1 py-3 text-[14px] text-gray-900 leading-5"
+                                        className="flex-1 py-3 text-[14px] text-zinc-100 leading-5"
                                         placeholder={`Add a comment for ${user?.username || 'user'}...`}
-                                        placeholderTextColor="#6B7280"
+                                        placeholderTextColor="#8b91a1"
                                         value={newComment}
                                         onChangeText={setNewComment}
                                         multiline
@@ -254,22 +249,16 @@ export const CommentsModal: React.FC<CommentsModalProps> = ({
                                             onPress={handleAddComment}
                                             disabled={submitting}
                                             className="ml-1 mb-2.5 mr-[-4px]"
+                                            accessibilityRole="button"
+                                            accessibilityLabel="Post comment"
                                         >
                                             {submitting ? (
                                                 <ActivityIndicator size="small" color="#3B82F6" />
                                             ) : (
-                                                <Text className="text-blue-500 font-bold text-[14px]">Post</Text>
+                                                <Text className="text-violet-300 font-bold text-[14px]">Post</Text>
                                             )}
                                         </TouchableOpacity>
-                                    ) : (
-                                        <View className="ml-1 mb-2.5 mr-[-4px] opacity-50">
-                                            <TouchableOpacity disabled>
-                                                <View className="bg-gray-400 rounded px-1.5 py-0.5">
-                                                    <Text className="text-white text-[10px] font-bold">GIF</Text>
-                                                </View>
-                                            </TouchableOpacity>
-                                        </View>
-                                    )}
+                                    ) : null}
                                 </View>
                             </View>
                         </View>

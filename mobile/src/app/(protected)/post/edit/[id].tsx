@@ -71,8 +71,8 @@ export default function EditPostScreen() {
 
     if (loading) {
         return (
-            <View className="flex-1 justify-center items-center bg-white">
-                <ActivityIndicator size="large" color="#2563EB" />
+            <View className="flex-1 justify-center items-center bg-[#090b10]">
+                <ActivityIndicator size="large" color="#a78bfa" />
             </View>
         );
     }
@@ -80,13 +80,13 @@ export default function EditPostScreen() {
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            className="flex-1 bg-white"
+            className="flex-1 bg-[#090b10]"
         >
             <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-100">
                 <TouchableOpacity onPress={() => router.back()}>
                     <Ionicons name="close" size={28} color="#1F2937" />
                 </TouchableOpacity>
-                <Text className="text-lg font-bold text-gray-900">Edit Post</Text>
+                <Text className="text-lg font-bold text-zinc-100">Edit Post</Text>
                 <TouchableOpacity onPress={handleSave} disabled={saving}>
                     {saving ? (
                         <ActivityIndicator size="small" color="#2563EB" />
@@ -110,9 +110,9 @@ export default function EditPostScreen() {
                     </View>
                 )}
 
-                <Text className="text-gray-900 font-bold text-base mb-2">Caption</Text>
+                <Text className="text-zinc-200 font-bold text-base mb-2">Caption</Text>
                 <TextInput
-                    className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-gray-900 min-h-[120px]"
+                    className="bg-[#151922] p-4 rounded-xl border border-zinc-800 text-zinc-100 min-h-[120px]"
                     placeholder="Write a caption..."
                     multiline
                     value={caption}

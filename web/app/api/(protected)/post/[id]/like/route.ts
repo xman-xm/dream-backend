@@ -41,6 +41,22 @@ export async function POST(
                 }
             })
 
+            const post = await prisma.post.findUnique({ where: { id }, select: { authorId: true } });
+            if (post && post.authorId !== user.id) {
+                try {
+                    const { createNotifications } = await import("@/lib/notification-service");
+                    await createNotifications([{
+                        recipientId: post.authorId,
+                        actorId: user.id,
+                        type: "LIKE",
+                        message: "liked your post.",
+                        postId: id,
+                    }]);
+                } catch (notificationError) {
+                    console.error("Unable to save like notification:", notificationError);
+                }
+            }
+
             // Implicit Learning (Background)
             // Weight 0.05 for a Like
             import("@/lib/learning").then(mod => {

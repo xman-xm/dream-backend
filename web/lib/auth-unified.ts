@@ -10,22 +10,24 @@ import { prisma } from "@/lib/prisma"
  */
 export async function getCurrentUser(req?: Request) {
     // 1. Try getting NextAuth session (Web)
-    const session = await getServerSession(authOptions)
-
-    if (session?.user?.email) {
-        return await prisma.user.findUnique({
-            where: { email: session.user.email },
-            select: {
-                id: true,
-                email: true,
-                name: true,
-                username: true,
-                avatarUrl: true,
-                bio: true,
-                createdAt: true,
-                // Don't return password
-            }
-        })
+    try {
+        const session = await getServerSession(authOptions)
+        if (session?.user?.email) {
+            return await prisma.user.findUnique({
+                where: { email: session.user.email },
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    username: true,
+                    avatarUrl: true,
+                    bio: true,
+                    createdAt: true,
+                }
+            })
+        }
+    } catch (sessionErr) {
+        // NextAuth session token expired or invalid secret, ignore silently
     }
 
     // 2. Try getting Bearer Token (Mobile)

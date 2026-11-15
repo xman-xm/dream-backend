@@ -1,6 +1,16 @@
 import { validateCredentials } from '@/lib/auth'
 import { SignJWT } from 'jose'
 
+const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+export function OPTIONS() {
+    return new Response(null, { status: 204, headers: corsHeaders })
+}
+
 export async function POST(req: Request) {
     let email, password;
 
@@ -11,7 +21,7 @@ export async function POST(req: Request) {
     } catch (error) {
         return Response.json(
             { error: 'Invalid JSON body' },
-            { status: 400 }
+            { status: 400, headers: corsHeaders }
         )
     }
 
@@ -22,7 +32,7 @@ export async function POST(req: Request) {
         if (!user) {
             return Response.json(
                 { error: 'Invalid email or password' },
-                { status: 401 }
+                { status: 401, headers: corsHeaders }
             )
         }
 
@@ -43,13 +53,13 @@ export async function POST(req: Request) {
         return Response.json({
             token,
             user
-        })
+        }, { headers: corsHeaders })
 
     } catch (error) {
         console.error('Mobile login error:', error)
         return Response.json(
             { error: 'Something went wrong' },
-            { status: 500 }
+            { status: 500, headers: corsHeaders }
         )
     }
 }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
 import { API_URL } from "../../lib/api";
@@ -95,19 +96,19 @@ export default function EditProfile() {
     };
 
     return (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1 bg-white">
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} className="flex-1 bg-[#090b10]">
             <ScrollView className="flex-1">
                 {/* Header */}
-                <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-100">
+                <View className="flex-row justify-between items-center px-4 py-3 border-b border-zinc-800 bg-[#101318]">
                     <TouchableOpacity onPress={() => router.back()}>
-                        <Text className="text-gray-500 text-lg">Cancel</Text>
+                        <Text className="text-zinc-400 text-base">Cancel</Text>
                     </TouchableOpacity>
-                    <Text className="text-xl font-bold text-gray-900">Edit Profile</Text>
+                    <Text className="text-xl font-bold text-zinc-100">Edit Profile</Text>
                     <TouchableOpacity onPress={handleSave} disabled={isLoading}>
                         {isLoading ? (
-                            <ActivityIndicator size="small" color="#2563EB" />
+                            <ActivityIndicator size="small" color="#a78bfa" />
                         ) : (
-                            <Text className="text-blue-600 font-bold text-lg">Save</Text>
+                            <Text className="text-violet-300 font-bold text-lg">Save</Text>
                         )}
                     </TouchableOpacity>
                 </View>
@@ -115,7 +116,7 @@ export default function EditProfile() {
                 {/* Avatar Section */}
                 <View className="items-center py-8">
                     <TouchableOpacity onPress={pickImage} className="relative">
-                        <View className="w-24 h-24 rounded-full bg-gray-200 overflow-hidden border-2 border-gray-100 items-center justify-center">
+                        <View className="w-24 h-24 rounded-full bg-zinc-800 overflow-hidden border-2 border-zinc-700 items-center justify-center">
                             {image ? (
                                 <Image source={{ uri: image }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
                             ) : originalAvatar ? (
@@ -126,49 +127,49 @@ export default function EditProfile() {
                                     contentFit="cover"
                                 />
                             ) : (
-                                <Text className="text-3xl font-bold text-gray-400">
+                                <Text className="text-3xl font-bold text-zinc-400">
                                     {(name?.[0] || username?.[0] || user?.email?.[0] || '?').toUpperCase()}
                                 </Text>
                             )}
                         </View>
-                        <View className="absolute bottom-0 right-0 bg-blue-500 w-8 h-8 rounded-full items-center justify-center border-2 border-white">
-                            <Text className="text-white text-xs">📷</Text>
+                        <View className="absolute bottom-0 right-0 bg-violet-500 w-8 h-8 rounded-full items-center justify-center border-2 border-[#090b10]">
+                            <Ionicons name="camera" size={15} color="#fff" />
                         </View>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={pickImage}>
-                        <Text className="text-blue-600 font-semibold mt-3">Change Profile Photo</Text>
+                        <Text className="text-violet-300 font-semibold mt-3">Change Profile Photo</Text>
                     </TouchableOpacity>
                 </View>
 
                 {/* Form Fields */}
                 <View className="px-4 space-y-6">
                     <View>
-                        <Text className="text-gray-500 text-sm font-medium mb-1 ml-1">Name</Text>
+                        <Text className="text-zinc-400 text-sm font-medium mb-1 ml-1">Name</Text>
                         <TextInput
                             value={name}
                             onChangeText={setName}
-                            className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-base"
+                            className="bg-[#151922] border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 text-base"
                             placeholder="Your Name"
                         />
                     </View>
 
                     <View>
-                        <Text className="text-gray-500 text-sm font-medium mb-1 ml-1">Username</Text>
+                        <Text className="text-zinc-400 text-sm font-medium mb-1 ml-1">Username</Text>
                         <TextInput
                             value={username}
                             onChangeText={setUsername}
-                            className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-base"
+                            className="bg-[#151922] border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 text-base"
                             placeholder="username"
                             autoCapitalize="none"
                         />
                     </View>
 
                     <View>
-                        <Text className="text-gray-500 text-sm font-medium mb-1 ml-1">Bio</Text>
+                        <Text className="text-zinc-400 text-sm font-medium mb-1 ml-1">Bio</Text>
                         <TextInput
                             value={bio}
                             onChangeText={setBio}
-                            className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-base"
+                            className="bg-[#151922] border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 text-base"
                             placeholder="Write something about yourself..."
                             multiline
                             numberOfLines={4}
