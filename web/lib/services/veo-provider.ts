@@ -1,7 +1,12 @@
+import {
+  createGateway,
+  experimental_getVideoStatus as getVideoStatus,
+  experimental_startVideo as startVideo,
+} from "ai";
 import { IVideoProvider, VideoGenerationParams, VideoGenerationResult } from "./video-provider.interface";
 import { VEO_RATES } from "./credit-ledger";
 
-export class GoogleVeo31LiteProvider implements IVideoProvider {
+export class AIGatewayVideoProvider implements IVideoProvider {
   private static readonly preset = {
     durationSeconds: 8,
     resolution: "720p" as const,
@@ -18,91 +23,46 @@ export class GoogleVeo31LiteProvider implements IVideoProvider {
     this.model = process.env.AI_GATEWAY_MODEL || process.env.VERCEL_AI_GATEWAY_MODEL || "bytedance/seedance-2.5";
   }
 
-  private getHeaders(): HeadersInit {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (this.apiKey) {
-      headers.Authorization = `Bearer ${this.apiKey}`;
-    }
-
-    return headers;
-  }
-
-  private extractVideoUrl(data: any): string | undefined {
-    const candidates = [
-      data?.video?.url,
-      data?.video?.download_url,
-      data?.video_url,
-      data?.output?.[0]?.url,
-      data?.output?.[0]?.video_url,
-      data?.result?.[0]?.url,
-      data?.result?.video_url,
-      data?.data?.[0]?.url,
-      data?.data?.[0]?.video_url,
-      data?.url,
-      data?.download_url,
-      data?.result?.video?.url,
-    ];
-
-    return candidates.find((candidate): candidate is string => Boolean(candidate && typeof candidate === "string"));
+  private getGateway() {
+    const baseUrl = this.gatewayBaseUrl.replace(/\/+$/, "");
+    return createGateway({
+      apiKey: this.apiKey,
+      baseURL: baseUrl.endsWith("/v4/ai") ? baseUrl : `${baseUrl}/v4/ai`,
+    });
   }
 
   async generate(params: VideoGenerationParams): Promise<VideoGenerationResult> {
-    const preset = GoogleVeo31LiteProvider.preset;
-    const rate = VEO_RATES[preset.resolution];
-    const estimatedCostUSD = preset.durationSeconds * rate;
+    const preset = AIGatewayVideoProvider.preset;
+    const durationSeconds = params.durationSeconds || preset.durationSeconds;
+    const resolution = params.resolution || preset.resolution;
+    const estimatedCostUSD = durationSeconds * VEO_RATES[resolution];
 
     if (!this.apiKey) {
-      console.warn("[VeoProvider] AI Gateway API key is not configured. Running in backend simulation mode.");
-      const mockOpId = `veo_op_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       return {
-        operationId: mockOpId,
+        operationId: "",
         estimatedCostUSD,
-        status: "GENERATING",
+        status: "FAILED",
+        errorMessage: "Vercel AI Gateway API key is not configured",
       };
     }
 
     try {
-      const response = await fetch(`${this.gatewayBaseUrl}/v1/videos`, {
-        method: "POST",
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          model: this.model,
-          prompt: params.prompt,
-          size: params.resolution === "1080p" ? "1080x1920" : "720x1280",
-          duration: params.durationSeconds || preset.durationSeconds,
-          aspect_ratio: params.aspectRatio || preset.aspectRatio,
-        }),
+      const { operation } = await startVideo({
+        model: this.getGateway().videoModel(this.model),
+        prompt: params.prompt,
+        duration: durationSeconds,
+        resolution: resolution === "1080p" ? "1080x1920" : "720x1280",
+        aspectRatio: (params.aspectRatio || preset.aspectRatio) as `${number}:${number}`,
+        generateAudio: true,
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Vercel AI Gateway video API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      const operationId = data?.id || data?.video_id || `seedance_${Date.now()}`;
-      const videoUrl = this.extractVideoUrl(data);
-
-      if (videoUrl) {
-        return {
-          operationId,
-          estimatedCostUSD,
-          status: "COMPLETED",
-          videoUrl,
-        };
-      }
-
       return {
-        operationId,
+        operationId: JSON.stringify({ model: this.model, operation }),
         estimatedCostUSD,
         status: "GENERATING",
       };
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to initiate Vercel AI Gateway video generation";
-      console.error("[VeoProvider] Generation initiation failed:", err);
+      const errorMessage = err instanceof Error ? err.message : "Failed to start Vercel AI Gateway video generation";
+      console.error("[AIGatewayVideoProvider] Generation initiation failed:", err);
       return {
         operationId: "",
         estimatedCostUSD,
@@ -113,58 +73,72 @@ export class GoogleVeo31LiteProvider implements IVideoProvider {
   }
 
   async checkStatus(operationId: string): Promise<VideoGenerationResult> {
-    if (!this.apiKey || operationId.startsWith("veo_op_")) {
+    if (!this.apiKey) {
       return {
         operationId,
-        estimatedCostUSD: 0.4,
-        status: "COMPLETED",
-        videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+        estimatedCostUSD: 0,
+        status: "FAILED",
+        errorMessage: "Vercel AI Gateway API key is not configured",
       };
     }
 
     try {
-      const url = operationId.startsWith("http")
-        ? operationId
-        : `${this.gatewayBaseUrl}/v1/videos/${encodeURIComponent(operationId)}`;
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers: this.getHeaders(),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Vercel AI Gateway status API error (${response.status}): ${errorText}`);
+      const storedOperation = JSON.parse(operationId) as {
+        model?: unknown;
+        operation?: unknown;
+      };
+      if (typeof storedOperation.model !== "string" || storedOperation.operation === undefined) {
+        throw new Error("Stored AI Gateway operation is invalid");
       }
 
-      const data = await response.json();
-      const normalizedStatus = String(data?.status || data?.state || "completed").toUpperCase();
-      const videoUrl = this.extractVideoUrl(data);
+      const result = await getVideoStatus(this.getGateway().videoModel(storedOperation.model), {
+        operation: storedOperation.operation as Parameters<typeof getVideoStatus>[1]["operation"],
+      });
 
-      if (["COMPLETED", "SUCCEEDED", "SUCCESS"].includes(normalizedStatus)) {
-        if (!videoUrl) {
+      if (result.status === "completed") {
+        const video = result.videos[0];
+        if (!video) throw new Error("Video model completed without returning a video");
+        if (video.type === "url") {
           return {
             operationId,
             estimatedCostUSD: 0,
-            status: "FAILED",
-            errorMessage: "Model finished without returning a video URL",
+            status: "COMPLETED",
+            videoUrl: video.url,
+            videoContentType: video.mediaType,
           };
         }
-
-        return {
-          operationId,
-          estimatedCostUSD: 0,
-          status: "COMPLETED",
-          videoUrl,
-        };
-      }
-
-      if (["FAILED", "ERROR", "CANCELLED"].includes(normalizedStatus)) {
+        if (video.type === "binary") {
+          return {
+            operationId,
+            estimatedCostUSD: 0,
+            status: "COMPLETED",
+            videoData: video.data,
+            videoContentType: video.mediaType,
+          };
+        }
+        if (video.type === "base64") {
+          return {
+            operationId,
+            estimatedCostUSD: 0,
+            status: "COMPLETED",
+            videoData: Buffer.from(video.data, "base64"),
+            videoContentType: video.mediaType,
+          };
+        }
         return {
           operationId,
           estimatedCostUSD: 0,
           status: "FAILED",
-          errorMessage: data?.error?.message || "Video generation failed",
+          errorMessage: "AI Gateway did not provide downloadable video data",
+        };
+      }
+
+      if (result.status === "error") {
+        return {
+          operationId,
+          estimatedCostUSD: 0,
+          status: "FAILED",
+          errorMessage: result.error || "Video generation failed",
         };
       }
 
@@ -175,6 +149,7 @@ export class GoogleVeo31LiteProvider implements IVideoProvider {
       };
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Status check failed";
+      console.error("[AIGatewayVideoProvider] Status check failed:", err);
       return {
         operationId,
         estimatedCostUSD: 0,

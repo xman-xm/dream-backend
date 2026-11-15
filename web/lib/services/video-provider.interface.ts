@@ -10,12 +10,14 @@ export interface VideoGenerationResult {
   estimatedCostUSD: number;
   status: "QUEUED" | "GENERATING" | "COMPLETED" | "FAILED";
   videoUrl?: string;
+  videoData?: Uint8Array;
+  videoContentType?: string;
   errorMessage?: string;
 }
 
 export interface IVideoProvider {
   /**
-   * Submits a generation request to the provider model (Google Veo 3.1 Lite)
+  * Submits a generation request to the configured video provider.
    */
   generate(params: VideoGenerationParams): Promise<VideoGenerationResult>;
 

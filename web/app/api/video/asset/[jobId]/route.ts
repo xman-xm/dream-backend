@@ -50,12 +50,15 @@ export async function GET(
     const range = req.headers.get("range");
     if (range) headers.set("range", range);
 
-    let upstream = await fetch(asset.storageUrl, { headers });
+    const assetUrl = asset.storageUrl.startsWith("/api/storage/")
+      ? new URL(asset.storageUrl, req.url).toString()
+      : asset.storageUrl;
+    let upstream = await fetch(assetUrl, { headers });
     const contentType = upstream.headers.get("content-type") || "";
 
     // Gemini may return a Files API resource URI first; request its binary form.
     if (upstream.ok && contentType.includes("application/json") && asset.storageUrl.includes("/files/")) {
-      const downloadUrl = `${asset.storageUrl.replace(/\/$/, "")}:download?alt=media`;
+      const downloadUrl = `${assetUrl.replace(/\/$/, "")}:download?alt=media`;
       upstream = await fetch(downloadUrl, { headers });
     }
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import { getCurrentUser } from "@/lib/auth-unified";
 import { prisma } from "@/lib/prisma";
-import { GoogleVeo31LiteProvider } from "@/lib/services/veo-provider";
+import { AIGatewayVideoProvider } from "@/lib/services/veo-provider";
 import { storeVideo } from "@/lib/video-storage";
 
 async function ensureVideoPost(job: {
@@ -22,17 +22,19 @@ async function ensureVideoPost(job: {
     throw new Error("Vercel AI Gateway API key is not configured");
   }
 
-  const upstream = await fetch(job.videoAsset.storageUrl, {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
-  });
-  if (!upstream.ok) {
-    throw new Error(`Unable to download generated video (${upstream.status})`);
-  }
+  if (!job.videoAsset.storageUrl.startsWith("/api/storage/")) {
+    const upstream = await fetch(job.videoAsset.storageUrl, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    });
+    if (!upstream.ok) {
+      throw new Error(`Unable to download generated video (${upstream.status})`);
+    }
 
-  const videoBuffer = Buffer.from(await upstream.arrayBuffer());
-  await storeVideo(`generated-${job.id}.mp4`, videoBuffer, "video/mp4");
+    const videoBuffer = Buffer.from(await upstream.arrayBuffer());
+    await storeVideo(`generated-${job.id}.mp4`, videoBuffer, "video/mp4");
+  }
 
   const post = await prisma.post.create({
     data: {
@@ -117,18 +119,37 @@ export async function GET(
       });
     }
 
-    // Check operation status with Veo provider
+    // Check operation status with Vercel AI Gateway
     const latestAttempt = job.attempts[0];
     if (latestAttempt && latestAttempt.veoOperationId) {
-      const provider = new GoogleVeo31LiteProvider();
+      const provider = new AIGatewayVideoProvider();
       const statusResult = await provider.checkStatus(latestAttempt.veoOperationId);
 
-      if (statusResult.status === "COMPLETED" && statusResult.videoUrl) {
+      if (statusResult.status === "COMPLETED" && (statusResult.videoUrl || statusResult.videoData)) {
+        let videoBytes: Buffer;
+        if (statusResult.videoData) {
+          videoBytes = Buffer.from(statusResult.videoData);
+        } else {
+          const apiKey = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_GATEWAY_API_KEY;
+          const upstream = await fetch(statusResult.videoUrl!, {
+            headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+          });
+          if (!upstream.ok) {
+            throw new Error(`Unable to download generated video (${upstream.status})`);
+          }
+          videoBytes = Buffer.from(await upstream.arrayBuffer());
+        }
+        const storageUrl = await storeVideo(
+          `generated-${job.id}.mp4`,
+          videoBytes,
+          statusResult.videoContentType || "video/mp4",
+        );
+
         // Create VideoAsset
         const videoAsset = await prisma.videoAsset.create({
           data: {
             generationJobId: job.id,
-            storageUrl: statusResult.videoUrl,
+            storageUrl,
             durationSeconds: job.durationSeconds,
             resolution: job.resolution,
             aspectRatio: job.aspectRatio,
@@ -163,7 +184,7 @@ export async function GET(
           where: { id: job.id },
           data: {
             status: "FAILED",
-            errorMessage: statusResult.errorMessage || "Veo model execution failed",
+            errorMessage: statusResult.errorMessage || "AI Gateway video generation failed",
           },
         });
 

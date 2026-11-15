@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-unified";
 import { prisma } from "@/lib/prisma";
 import { calculateGenerationCost } from "@/lib/services/credit-ledger";
-import { GoogleVeo31LiteProvider } from "@/lib/services/veo-provider";
+import { AIGatewayVideoProvider } from "@/lib/services/veo-provider";
 
 export async function POST(req: Request) {
   try {
@@ -39,8 +39,8 @@ export async function POST(req: Request) {
       },
     });
 
-    // 5. Submit to Provider (Google Veo 3.1 Lite)
-    const provider = new GoogleVeo31LiteProvider();
+    // Submit the job to Vercel AI Gateway.
+    const provider = new AIGatewayVideoProvider();
     const result = await provider.generate({
       prompt,
       durationSeconds,
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
         where: { id: job.id },
         data: {
           status: "FAILED",
-          errorMessage: result.errorMessage || "Failed to submit to Veo API",
+          errorMessage: result.errorMessage || "Failed to submit to AI Gateway",
         },
       });
 
